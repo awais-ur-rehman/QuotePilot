@@ -34,3 +34,6 @@ lerna-debug.log*
 
 # OS
 Thumbs.db
+.agent/
+.agents/
+QUOTEPILOT.md

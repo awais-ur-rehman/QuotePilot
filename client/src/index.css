@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Outfit", system-ui, sans-serif;
+    background-color: #0f1419;
+    color: #f1f5f9;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #1a1f2e;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #2e3448;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #00d4aa;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-slate-900 border border-slate-800 rounded-lg;
+  }
+
+  .btn-primary {
+    @apply bg-teal-400 text-slate-950 font-semibold px-4 py-2 rounded-md hover:bg-teal-500 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-slate-800 text-slate-200 font-medium px-4 py-2 rounded-md border border-slate-700 hover:bg-slate-700 transition-colors duration-150;
+  }
+
+  .badge-running {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-teal-400/10 text-teal-400 border border-teal-400/20;
+  }
+
+  .badge-completed {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-green-400/10 text-green-400 border border-green-400/20;
+  }
+
+  .badge-failed {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-red-400/10 text-red-400 border border-red-400/20;
+  }
+
+  .badge-pending {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-amber-400/10 text-amber-400 border border-amber-400/20;
+  }
+
+  .badge-draft {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-slate-700/50 text-slate-400 border border-slate-700;
+  }
+
+  .input {
+    @apply w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 transition-colors;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-slate-400 mb-1.5;
+  }
+}

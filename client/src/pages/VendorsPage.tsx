@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { vendorApi } from "../services/api";
 import Header from "../components/layout/Header";
+import EmptyState from "../components/common/EmptyState";
 import type { Vendor } from "../types";
 
-function VendorFormModal({
+// ─── Slide-in Panel ───────────────────────────────────────────────────────────
+
+function VendorPanel({
   vendor,
   onClose,
   onSave,
@@ -28,6 +31,10 @@ function VendorFormModal({
   ) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const handleSave = async () => {
+    if (!form.name || !form.quoteUrl) {
+      setError("Name and quote URL are required.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -45,68 +52,81 @@ function VendorFormModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="card w-full max-w-lg p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 z-40 bg-slate-900/20" onClick={onClose} />
+
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-96 bg-white border-l border-slate-200 flex flex-col animate-slide-right"
+           style={{ boxShadow: "-4px 0 20px rgba(0,0,0,0.08)" }}>
+        {/* Panel header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <h2 className="text-base font-semibold text-slate-900">
             {vendor ? "Edit Vendor" : "Add Vendor"}
           </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-lg leading-none">×</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">Name</label>
-            <input className="input" value={form.name} onChange={set("name")} />
+        {/* Panel body */}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Name *</label>
+              <input className="input" value={form.name} onChange={set("name")} placeholder="Vendor Co." />
+            </div>
+            <div>
+              <label className="label">Category</label>
+              <input className="input" value={form.category} onChange={set("category")} placeholder="packaging" />
+            </div>
           </div>
+
           <div>
-            <label className="label">Category</label>
-            <input className="input" value={form.category} onChange={set("category")} />
+            <label className="label">Website</label>
+            <input className="input" placeholder="https://example.com" value={form.website} onChange={set("website")} />
           </div>
+
+          <div>
+            <label className="label">Quote URL *</label>
+            <input className="input" placeholder="https://example.com/get-quote" value={form.quoteUrl} onChange={set("quoteUrl")} />
+            <p className="text-[11px] text-slate-400 mt-1">The page where the agent should start the quote flow.</p>
+          </div>
+
+          <div>
+            <label className="label">Browser profile</label>
+            <select className="input" value={form.browserProfile} onChange={set("browserProfile")}>
+              <option value="lite">lite — default, fast</option>
+              <option value="stealth">stealth — anti-bot bypass</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Agent instructions</label>
+            <textarea
+              className="input resize-none h-28"
+              placeholder="Tips for navigating this vendor's form (optional)..."
+              value={form.formInstructions}
+              onChange={set("formInstructions")}
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
 
-        <div>
-          <label className="label">Website</label>
-          <input className="input" placeholder="https://example.com" value={form.website} onChange={set("website")} />
-        </div>
-
-        <div>
-          <label className="label">Quote URL (where agent should start)</label>
-          <input className="input" placeholder="https://example.com/get-quote" value={form.quoteUrl} onChange={set("quoteUrl")} />
-        </div>
-
-        <div>
-          <label className="label">Browser Profile</label>
-          <select className="input" value={form.browserProfile} onChange={set("browserProfile")}>
-            <option value="lite">lite (default)</option>
-            <option value="stealth">stealth (anti-bot)</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="label">Form Instructions (hints for the agent)</label>
-          <textarea
-            className="input resize-none h-24"
-            placeholder="Special instructions for navigating this vendor's form..."
-            value={form.formInstructions}
-            onChange={set("formInstructions")}
-          />
-        </div>
-
-        {error && <p className="text-sm text-red-400">{error}</p>}
-
-        <div className="flex gap-3 pt-1">
+        {/* Panel footer */}
+        <div className="px-5 py-4 border-t border-slate-200 flex gap-3">
           <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">
             {saving ? "Saving…" : "Save Vendor"}
           </button>
           <button onClick={onClose} className="btn-secondary px-4">Cancel</button>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
-function VendorCard({
+// ─── Vendor Row ───────────────────────────────────────────────────────────────
+
+function VendorRow({
   vendor,
   onEdit,
   onDelete,
@@ -115,69 +135,72 @@ function VendorCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  return (
-    <div className="card p-4 flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-slate-200">{vendor.name}</h3>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-              vendor.browserProfile === "stealth"
-                ? "bg-amber-400/10 text-amber-400"
-                : "bg-slate-700 text-slate-400"
-            }`}>
-              {vendor.browserProfile}
-            </span>
-          </div>
-          <a
-            href={vendor.website}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-teal-400/70 hover:text-teal-400 font-mono truncate block"
-          >
-            {vendor.website}
-          </a>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <button onClick={onEdit} className="text-xs text-slate-500 hover:text-slate-200 px-2 py-1">
-            Edit
-          </button>
-          <button onClick={onDelete} className="text-xs text-slate-500 hover:text-red-400 px-2 py-1">
-            Del
-          </button>
-        </div>
-      </div>
+  const reliabilityColor =
+    vendor.reliability >= 80 ? "text-green-700 bg-green-50" :
+    vendor.reliability >= 50 ? "text-amber-700 bg-amber-50" :
+    "text-red-700 bg-red-50";
 
-      <div className="flex items-center gap-4 text-xs font-mono text-slate-500">
-        <div>
-          <span className="text-slate-600">Category</span>{" "}
-          <span className="text-slate-400">{vendor.category}</span>
-        </div>
-        <div>
-          <span className="text-slate-600">Reliability</span>{" "}
-          <span className={vendor.reliability >= 80 ? "text-green-400" : vendor.reliability >= 50 ? "text-amber-400" : "text-red-400"}>
-            {vendor.reliability}%
+  return (
+    <div className="flex items-center gap-4 px-5 py-3.5 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
+      {/* Name + URL */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-sm font-medium text-slate-800">{vendor.name}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+            vendor.browserProfile === "stealth"
+              ? "bg-amber-50 text-amber-700 border border-amber-200"
+              : "bg-slate-100 text-slate-500"
+          }`}>
+            {vendor.browserProfile}
           </span>
         </div>
-        {vendor.avgSteps > 0 && (
-          <div>
-            <span className="text-slate-600">Avg steps</span>{" "}
-            <span className="text-slate-400">{vendor.avgSteps}</span>
-          </div>
-        )}
+        <a
+          href={vendor.website}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-teal-600 hover:text-teal-700 font-mono truncate block max-w-xs"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {vendor.website}
+        </a>
       </div>
 
-      {vendor.formInstructions && (
-        <p className="text-xs text-slate-600 line-clamp-2">{vendor.formInstructions}</p>
-      )}
+      {/* Category */}
+      <div className="w-28 text-xs text-slate-500 truncate">{vendor.category}</div>
+
+      {/* Reliability */}
+      <div className="w-20 flex items-center gap-1.5">
+        <div className="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${
+              vendor.reliability >= 80 ? "bg-green-500" :
+              vendor.reliability >= 50 ? "bg-amber-500" : "bg-red-500"
+            }`}
+            style={{ width: `${vendor.reliability}%` }}
+          />
+        </div>
+        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold ${reliabilityColor}`}>
+          {vendor.reliability}%
+        </span>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-1 shrink-0">
+        <button onClick={onEdit} className="btn-ghost text-xs py-1 px-2">Edit</button>
+        <button onClick={onDelete} className="btn-ghost text-xs py-1 px-2 text-red-500 hover:bg-red-50 hover:text-red-600">
+          Delete
+        </button>
+      </div>
     </div>
   );
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [showPanel, setShowPanel] = useState(false);
   const [editTarget, setEditTarget] = useState<Vendor | null>(null);
 
   const load = useCallback(async () => {
@@ -195,53 +218,63 @@ export default function VendorsPage() {
     load();
   };
 
-  const handleEdit = (v: Vendor) => {
-    setEditTarget(v);
-    setShowModal(true);
-  };
+  const openAdd = () => { setEditTarget(null); setShowPanel(true); };
+  const openEdit = (v: Vendor) => { setEditTarget(v); setShowPanel(true); };
+  const closePanel = () => { setShowPanel(false); setEditTarget(null); };
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Header
         title="Vendors"
-        subtitle={`${vendors.length} active vendor${vendors.length !== 1 ? "s" : ""}`}
+        subtitle={`${vendors.length} active`}
         actions={
-          <button onClick={() => { setEditTarget(null); setShowModal(true); }} className="btn-primary text-xs px-3 py-1.5">
+          <button onClick={openAdd} className="btn-primary text-xs px-3 py-1.5">
             + Add Vendor
           </button>
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {loading && (
-          <p className="text-sm text-slate-500 font-mono animate-pulse">Loading vendors…</p>
-        )}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto p-6">
+          {loading && (
+            <p className="text-sm text-slate-400 font-mono animate-pulse">Loading vendors…</p>
+          )}
 
-        {!loading && vendors.length === 0 && (
-          <div className="text-center py-20">
-            <p className="text-sm text-slate-500 mb-4">No vendors yet. Run the seed script or add one manually.</p>
-            <button onClick={() => setShowModal(true)} className="btn-primary text-sm">
-              Add First Vendor
-            </button>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
-          {vendors.map((v) => (
-            <VendorCard
-              key={v._id}
-              vendor={v}
-              onEdit={() => handleEdit(v)}
-              onDelete={() => handleDelete(v._id)}
+          {!loading && vendors.length === 0 && (
+            <EmptyState
+              title="No vendors yet"
+              description="Add your first vendor or run the seed script to get started."
+              icon="⬡"
             />
-          ))}
+          )}
+
+          {!loading && vendors.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-[6px] overflow-hidden"
+                 style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+              {/* Table header */}
+              <div className="flex items-center gap-4 px-5 py-2.5 bg-slate-50 border-b border-slate-200">
+                <div className="flex-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">Vendor</div>
+                <div className="w-28 text-xs font-semibold text-slate-500 uppercase tracking-wider">Category</div>
+                <div className="w-20 text-xs font-semibold text-slate-500 uppercase tracking-wider">Reliability</div>
+                <div className="w-28" />
+              </div>
+              {vendors.map((v) => (
+                <VendorRow
+                  key={v._id}
+                  vendor={v}
+                  onEdit={() => openEdit(v)}
+                  onDelete={() => handleDelete(v._id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {showModal && (
-        <VendorFormModal
+      {showPanel && (
+        <VendorPanel
           vendor={editTarget}
-          onClose={() => setShowModal(false)}
+          onClose={closePanel}
           onSave={load}
         />
       )}

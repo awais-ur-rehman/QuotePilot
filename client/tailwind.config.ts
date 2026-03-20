@@ -4,39 +4,20 @@ export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
-      colors: {
-        // Dark slate background
-        slate: {
-          950: "#0F1419",
-          900: "#1A1F2E",
-          800: "#242938",
-          700: "#2E3448",
-        },
-        // Electric teal accent
-        teal: {
-          400: "#00D4AA",
-          500: "#00BF99",
-          600: "#00A885",
-        },
-        // Warm amber for warnings
-        amber: {
-          400: "#F59E0B",
-          500: "#D97706",
-        },
-      },
       fontFamily: {
-        mono: ["JetBrains Mono", "IBM Plex Mono", "Fira Code", "monospace"],
-        sans: ["Outfit", "Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
+        sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"],
       },
       animation: {
-        "pulse-teal": "pulse-teal 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "pulse-dot": "pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "slide-in": "slide-in 0.2s ease-out",
         "fade-in": "fade-in 0.15s ease-out",
+        "slide-right": "slide-right 0.25s ease-out",
       },
       keyframes: {
-        "pulse-teal": {
+        "pulse-dot": {
           "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0.4" },
+          "50%": { opacity: "0.3" },
         },
         "slide-in": {
           "0%": { transform: "translateY(-4px)", opacity: "0" },
@@ -46,6 +27,15 @@ export default {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
+        "slide-right": {
+          "0%": { transform: "translateX(32px)", opacity: "0" },
+          "100%": { transform: "translateX(0)", opacity: "1" },
+        },
+      },
+      boxShadow: {
+        card: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+        "card-hover": "0 4px 12px rgba(0,0,0,0.08)",
+        modal: "0 20px 60px rgba(0,0,0,0.15)",
       },
     },
   },

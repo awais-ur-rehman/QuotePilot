@@ -1,63 +1,51 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { rfqApi } from "../services/api";
 import type { RFQ } from "../types";
 
 export function useRFQList() {
-  const [rfqs, setRfqs] = useState<RFQ[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetch = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["rfqs"],
+    queryFn: async () => {
       const res = await rfqApi.list();
-      setRfqs((res.data as RFQ[]) ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load RFQs");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return (res.data as RFQ[]) ?? [];
+    },
+    refetchInterval: (query) => {
+      const rfqs = query.state.data ?? [];
+      return rfqs.some((r) => r.status === "running") ? 5000 : false;
+    },
+  });
 
-  useEffect(() => { fetch(); }, [fetch]);
-
-  return { rfqs, loading, error, refetch: fetch };
+  return {
+    rfqs: data ?? [],
+    loading: isLoading,
+    error: error instanceof Error ? error.message : null,
+    refetch,
+  };
 }
 
 export function useRFQ(id: string | null) {
-  const [rfq, setRfq] = useState<RFQ | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetch = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await rfqApi.get(id);
-      setRfq(res.data as RFQ);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load RFQ");
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["rfq", id],
+    queryFn: async () => {
+      const res = await rfqApi.get(id!);
+      return res.data as RFQ;
+    },
+    enabled: !!id,
+    refetchInterval: (query) => {
+      return query.state.data?.status === "running" ? 8000 : false;
+    },
+  });
 
-  // Poll every 3s while running
-  useEffect(() => {
-    fetch();
-  }, [fetch]);
+  const refetch = () => {
+    queryClient.invalidateQueries({ queryKey: ["rfq", id] });
+  };
 
-  useEffect(() => {
-    if (rfq?.status === "running") {
-      pollRef.current = setInterval(fetch, 3000);
-    } else {
-      if (pollRef.current) clearInterval(pollRef.current);
-    }
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [rfq?.status, fetch]);
-
-  return { rfq, loading, error, refetch: fetch };
+  return {
+    rfq: data ?? null,
+    loading: isLoading,
+    error: error instanceof Error ? error.message : null,
+    refetch,
+  };
 }

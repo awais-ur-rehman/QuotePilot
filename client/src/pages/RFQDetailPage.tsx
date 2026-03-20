@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom";
 import { useRFQ } from "../hooks/useRFQ";
-import { useSSE } from "../hooks/useSSE";
+import { useAgentSocket } from "../hooks/useAgentSocket";
 import { rfqApi } from "../services/api";
 import Header from "../components/layout/Header";
 import StatusBadge from "../components/common/StatusBadge";
@@ -8,49 +8,56 @@ import { formatCurrency, truncate } from "../utils/formatters";
 import type { AgentStreamEvent, Quote } from "../types";
 import { useState, useRef, useEffect, memo } from "react";
 
-// ─── Agent Activity Feed ──────────────────────────────────────────────────────
+// ─── Terminal Log ─────────────────────────────────────────────────────────────
 
-const EventRow = memo(function EventRow({ event }: { event: AgentStreamEvent }) {
-  const config: Record<string, { icon: string; color: string }> = {
-    STARTED:      { icon: "▶", color: "text-teal-400" },
-    STREAMING_URL:{ icon: "🖥", color: "text-blue-400" },
-    PROGRESS:     { icon: "⚡", color: "text-slate-400" },
-    COMPLETE:     { icon: "✓", color: "text-green-400" },
-    ERROR:        { icon: "✕", color: "text-red-400" },
-    CONNECTED:    { icon: "◉", color: "text-slate-600" },
-  };
-  const c = config[event.type] ?? { icon: "·", color: "text-slate-600" };
+const TerminalRow = memo(function TerminalRow({ event }: { event: AgentStreamEvent }) {
+  if (!event.vendorName || event.vendorName === "System") return null;
+
   const ts = new Date(event.timestamp).toISOString().slice(11, 19);
+
+  const typeStyles: Record<string, string> = {
+    STARTED:      "text-teal-400",
+    STREAMING_URL:"text-blue-400",
+    PROGRESS:     "text-slate-300",
+    COMPLETE:     "text-green-400",
+    ERROR:        "text-red-400",
+  };
+  const typeColor = typeStyles[event.type] ?? "text-slate-500";
 
   const getMessage = () => {
     const d = event.data as Record<string, unknown>;
     switch (event.type) {
-      case "STARTED":     return `Agent started (run: ${(d.runId as string)?.slice(0, 8) ?? "…"})`;
-      case "STREAMING_URL": return `Browser stream: ${(d.streamingUrl as string)?.slice(0, 60) ?? "…"}`;
-      case "PROGRESS":    return d.purpose as string;
-      case "COMPLETE":    return d.status === "COMPLETED" ? "Quote extracted successfully" : `Failed: ${d.error ?? "unknown"}`;
-      case "ERROR":       return `Error: ${d.error as string}`;
-      default:            return event.type;
+      case "STARTED":      return `Agent started · run ${(d.runId as string)?.slice(0, 8) ?? "…"}`;
+      case "STREAMING_URL":return `Browser stream ready`;
+      case "PROGRESS":     return (d.purpose as string) ?? "Working…";
+      case "COMPLETE":     return d.status === "COMPLETED" ? "Quote extracted ✓" : `Failed: ${String(d.error ?? "unknown")}`;
+      case "ERROR":        return `Error: ${d.error as string}`;
+      default:             return event.type;
     }
   };
 
-  if ((event.type as string) === "CONNECTED" || !event.vendorName) return null;
-
   return (
-    <div className="flex items-start gap-2.5 py-1.5 border-b border-slate-800/50 animate-slide-in">
-      <span className={`font-mono text-xs ${c.color} w-4 shrink-0 mt-0.5 text-center`}>{c.icon}</span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="text-xs font-semibold text-slate-300">{event.vendorName}</span>
-          <span className="text-[10px] text-slate-600 font-mono">{ts}</span>
-        </div>
-        <p className="text-xs text-slate-500 truncate">{getMessage()}</p>
-      </div>
+    <div className="flex items-start gap-2 py-0.5 animate-slide-in font-mono text-[11px] leading-relaxed">
+      <span className="text-slate-600 shrink-0 select-none">{ts}</span>
+      <span className={`${typeColors(event.type)} shrink-0 w-[70px] truncate select-none`}>
+        [{event.type.slice(0, 8)}]
+      </span>
+      <span className="text-slate-400 shrink-0 w-[90px] truncate">{event.vendorName}</span>
+      <span className={`${typeColor} flex-1 min-w-0 break-all`}>{getMessage()}</span>
     </div>
   );
 });
 
-function AgentFeed({ events }: { events: AgentStreamEvent[] }) {
+function typeColors(type: string): string {
+  const m: Record<string, string> = {
+    STARTED: "text-teal-400", COMPLETE: "text-green-400",
+    ERROR: "text-red-400", STREAMING_URL: "text-blue-400",
+    PROGRESS: "text-slate-500",
+  };
+  return m[type] ?? "text-slate-600";
+}
+
+function TerminalPanel({ events }: { events: AgentStreamEvent[] }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,170 +65,173 @@ function AgentFeed({ events }: { events: AgentStreamEvent[] }) {
   }, [events.length]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between">
-        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Activity Feed</span>
-        <span className="text-[10px] text-slate-600 font-mono">{events.length} events</span>
+    <div className="terminal flex flex-col h-full overflow-hidden">
+      {/* Terminal header */}
+      <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-slate-700/60">
+        <span className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
+        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/70" />
+        <span className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
+        <span className="ml-3 text-slate-500 text-[11px] font-mono">agent.log — {events.length} events</span>
       </div>
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        {events.length === 0 && (
-          <p className="text-xs text-slate-600 font-mono pt-4 text-center">
-            Waiting for agent events…
-          </p>
+
+      {/* Log body */}
+      <div className="flex-1 overflow-y-auto px-4 py-3">
+        {events.length === 0 ? (
+          <div className="text-slate-600 text-[11px] font-mono pt-2">
+            <span className="text-teal-500">$</span> Waiting for agent events…
+            <span className="inline-block w-2 h-3 bg-slate-500 ml-0.5 animate-pulse" />
+          </div>
+        ) : (
+          events.map((e, i) => <TerminalRow key={i} event={e} />)
         )}
-        {events.map((e, i) => (
-          <EventRow key={i} event={e} />
-        ))}
         <div ref={bottomRef} />
       </div>
     </div>
   );
 }
 
-// ─── Quote Matrix ─────────────────────────────────────────────────────────────
+// ─── Vendor Status Strip ──────────────────────────────────────────────────────
 
-function QuoteMatrix({ quotes }: { quotes: Quote[] }) {
-  const [sortBy, setSortBy] = useState<"price" | "unitPrice" | "leadTime">("unitPrice");
+function VendorStrip({
+  quotes,
+  vendorStatuses,
+}: {
+  quotes: Quote[];
+  vendorStatuses: Map<string, AgentStreamEvent["type"]>;
+}) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {quotes.map((q) => {
+        const vendor = q.vendor as { name?: string } | undefined;
+        const liveStatus = vendorStatuses.get(q.vendorId);
+        const isRunning = liveStatus === "PROGRESS" || liveStatus === "STARTED";
+        const isComplete = liveStatus === "COMPLETE" || q.status === "completed";
+        const isError = liveStatus === "ERROR" || q.status === "failed";
+
+        const dotClass = isRunning
+          ? "bg-teal-600 animate-pulse-dot"
+          : isComplete
+          ? "bg-green-600"
+          : isError
+          ? "bg-red-500"
+          : "bg-slate-300";
+
+        return (
+          <div
+            key={q._id}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 rounded-[6px] text-xs"
+            style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
+            <span className="font-medium text-slate-700">{vendor?.name ?? "Vendor"}</span>
+            {q.unitPrice !== undefined && (
+              <span className="text-slate-400 font-mono text-[10px] ml-1">
+                {formatCurrency(q.unitPrice, q.currency)}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Quote Table ──────────────────────────────────────────────────────────────
+
+function QuoteTable({ quotes }: { quotes: Quote[] }) {
+  const [sortKey, setSortKey] = useState<"unitPrice" | "price" | "leadTime">("unitPrice");
 
   const sorted = [...quotes].sort((a, b) => {
-    if (sortBy === "price") return (a.price ?? Infinity) - (b.price ?? Infinity);
-    if (sortBy === "unitPrice") return (a.unitPrice ?? Infinity) - (b.unitPrice ?? Infinity);
+    if (sortKey === "unitPrice") return (a.unitPrice ?? Infinity) - (b.unitPrice ?? Infinity);
+    if (sortKey === "price") return (a.price ?? Infinity) - (b.price ?? Infinity);
     return 0;
   });
 
-  const bestUnitPrice = Math.min(...quotes.filter((q) => q.unitPrice).map((q) => q.unitPrice!));
+  const bestUnitPrice = Math.min(...quotes.filter((q) => q.unitPrice !== undefined).map((q) => q.unitPrice!));
+
+  const cols: Array<{ key: typeof sortKey; label: string }> = [
+    { key: "unitPrice", label: "Unit Price" },
+    { key: "price", label: "Total" },
+  ];
 
   if (quotes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-32 text-sm text-slate-600 font-mono">
+      <div className="flex items-center justify-center h-32 text-sm text-slate-400">
         No quotes yet — agents are working…
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs text-slate-500">Sort by:</span>
-        {(["unitPrice", "price", "leadTime"] as const).map((k) => (
+    <div className="overflow-x-auto">
+      {/* Sort controls */}
+      <div className="flex items-center gap-1 mb-3">
+        <span className="text-xs text-slate-400 mr-1">Sort:</span>
+        {cols.map((c) => (
           <button
-            key={k}
-            onClick={() => setSortBy(k === "leadTime" ? "price" : k)}
-            className={`text-xs px-2 py-0.5 rounded font-mono ${
-              sortBy === k ? "bg-teal-400/20 text-teal-400" : "text-slate-500 hover:text-slate-300"
+            key={c.key}
+            onClick={() => setSortKey(c.key)}
+            className={`text-xs px-2 py-0.5 rounded font-medium transition-colors ${
+              sortKey === c.key
+                ? "bg-teal-50 text-teal-700 border border-teal-200"
+                : "text-slate-500 hover:text-slate-700"
             }`}
           >
-            {k === "unitPrice" ? "Unit Price" : k === "price" ? "Total" : "Lead Time"}
+            {c.label}
           </button>
         ))}
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-slate-800">
-              {["Vendor", "Status", "Unit Price", "Total Price", "Lead Time", "MOQ", "Notes"].map((h) => (
-                <th key={h} className="text-left text-slate-500 font-medium pb-2 pr-4 font-mono whitespace-nowrap">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((q) => {
-              const isBest = q.unitPrice !== undefined && q.unitPrice === bestUnitPrice;
-              const vendor = q.vendor as { name?: string } | undefined;
-              return (
-                <tr key={q._id} className={`border-b border-slate-800/50 ${isBest ? "bg-teal-400/5" : ""}`}>
-                  <td className="py-2.5 pr-4 font-semibold text-slate-200 whitespace-nowrap">
-                    {vendor?.name ?? "—"}
-                    {isBest && <span className="ml-1.5 text-[10px] text-teal-400 font-mono">BEST</span>}
-                  </td>
-                  <td className="py-2.5 pr-4">
-                    <StatusBadge status={q.status} />
-                  </td>
-                  <td className={`py-2.5 pr-4 font-mono font-semibold ${isBest ? "text-teal-400" : "text-slate-200"}`}>
-                    {formatCurrency(q.unitPrice, q.currency)}
-                  </td>
-                  <td className="py-2.5 pr-4 font-mono text-slate-300">
-                    {formatCurrency(q.price, q.currency)}
-                  </td>
-                  <td className="py-2.5 pr-4 text-slate-400">
-                    {q.leadTime ?? "—"}
-                  </td>
-                  <td className="py-2.5 pr-4 font-mono text-slate-400">
-                    {q.minimumOrder ? q.minimumOrder.toLocaleString() : "—"}
-                  </td>
-                  <td className="py-2.5 text-slate-500 max-w-xs">
-                    {q.notes ? truncate(q.notes, 60) : "—"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ─── Vendor Status Cards ──────────────────────────────────────────────────────
-
-function VendorStatusGrid({
-  rfq,
-  vendorStatuses,
-  streamingUrls,
-}: {
-  rfq: { vendorIds: string[] };
-  vendorStatuses: Map<string, AgentStreamEvent["type"]>;
-  streamingUrls: Map<string, string>;
-}) {
-  const quotes = (rfq as unknown as { quotes?: Quote[] }).quotes ?? [];
-
-  return (
-    <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-      {quotes.map((q) => {
-        const vendor = q.vendor as { name?: string; _id?: string } | undefined;
-        const liveStatus = vendorStatuses.get(q.vendorId) ?? null;
-        const streamUrl = streamingUrls.get(q.vendorId);
-        const effectiveStatus =
-          liveStatus === "COMPLETE" ? q.status :
-          liveStatus === "PROGRESS" || liveStatus === "STARTED" ? "running" :
-          liveStatus === "ERROR" ? "failed" :
-          q.status;
-
-        return (
-          <div key={q._id} className="card p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-slate-200 truncate">{vendor?.name ?? "Vendor"}</span>
-              <StatusBadge status={effectiveStatus} />
-            </div>
-            {streamUrl && (
-              <a
-                href={streamUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full h-20 bg-slate-800 rounded border border-slate-700 overflow-hidden hover:border-teal-400/30 transition-colors mb-2"
-              >
-                <iframe
-                  src={streamUrl}
-                  className="w-full h-full border-0 pointer-events-none scale-75 origin-top-left"
-                  style={{ width: "133%", height: "133%" }}
-                  title={`${vendor?.name} live view`}
-                />
-              </a>
-            )}
-            {q.unitPrice !== undefined && (
-              <div className="text-xs font-mono text-teal-400 font-semibold">
-                {formatCurrency(q.unitPrice, q.currency)} / unit
-              </div>
-            )}
-            {q.errorMessage && (
-              <div className="text-[10px] text-red-400 mt-1 truncate">{q.errorMessage}</div>
-            )}
-          </div>
-        );
-      })}
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
+          <tr>
+            {["Vendor", "Status", "Unit Price", "Total", "Lead Time", "MOQ", "Shipping", "Notes"].map((h) => (
+              <th key={h} className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider py-2.5 pr-4 whitespace-nowrap">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((q) => {
+            const isBest = q.unitPrice !== undefined && q.unitPrice === bestUnitPrice;
+            const vendor = q.vendor as { name?: string } | undefined;
+            return (
+              <tr key={q._id} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${isBest ? "bg-teal-50/50" : ""}`}>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <span className="font-semibold text-slate-800">{vendor?.name ?? "—"}</span>
+                  {isBest && (
+                    <span className="ml-2 text-[10px] bg-teal-100 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded font-semibold">
+                      BEST
+                    </span>
+                  )}
+                </td>
+                <td className="py-3 pr-4">
+                  <StatusBadge status={q.status} />
+                </td>
+                <td className={`py-3 pr-4 font-mono font-semibold whitespace-nowrap ${isBest ? "text-teal-700" : "text-slate-800"}`}>
+                  {formatCurrency(q.unitPrice, q.currency)}
+                </td>
+                <td className="py-3 pr-4 font-mono text-slate-600 whitespace-nowrap">
+                  {formatCurrency(q.price, q.currency)}
+                </td>
+                <td className="py-3 pr-4 text-slate-500">{q.leadTime ?? "—"}</td>
+                <td className="py-3 pr-4 font-mono text-slate-500">
+                  {q.minimumOrder ? q.minimumOrder.toLocaleString() : "—"}
+                </td>
+                <td className="py-3 pr-4 font-mono text-slate-500">
+                  {q.shippingCost !== undefined ? formatCurrency(q.shippingCost, q.currency) : "—"}
+                </td>
+                <td className="py-3 text-slate-400 max-w-xs">
+                  {q.notes ? truncate(q.notes, 60) : q.errorMessage ? (
+                    <span className="text-red-500">{truncate(q.errorMessage, 50)}</span>
+                  ) : "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -231,18 +241,7 @@ function VendorStatusGrid({
 export default function RFQDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { rfq, loading, error, refetch } = useRFQ(id ?? null);
-  const { events, vendorStatuses, connected } = useSSE(
-    rfq?.status === "running" || rfq?.status === "completed" ? (id ?? null) : null
-  );
-
-  // Extract streaming URLs from SSE events
-  const streamingUrls = new Map<string, string>();
-  for (const e of events) {
-    if (e.type === "STREAMING_URL") {
-      const d = e.data as { streamingUrl?: string };
-      if (d.streamingUrl) streamingUrls.set(e.vendorId, d.streamingUrl);
-    }
-  }
+  const { events, vendorStatuses, connected } = useAgentSocket(id ?? null);
 
   const quotes: Quote[] = ((rfq as unknown as { quotes?: Quote[] })?.quotes ?? []);
 
@@ -254,7 +253,7 @@ export default function RFQDetailPage() {
 
   if (loading && !rfq) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-slate-500 font-mono animate-pulse">
+      <div className="flex items-center justify-center h-full text-sm text-slate-400 font-mono animate-pulse">
         Loading RFQ…
       </div>
     );
@@ -263,8 +262,8 @@ export default function RFQDetailPage() {
   if (error || !rfq) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="card p-6 text-center">
-          <p className="text-sm text-red-400">{error ?? "RFQ not found"}</p>
+        <div className="bg-red-50 border border-red-200 rounded-[6px] p-6 text-center">
+          <p className="text-sm text-red-700">{error ?? "RFQ not found"}</p>
         </div>
       </div>
     );
@@ -278,12 +277,15 @@ export default function RFQDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             {connected && rfq.status === "running" && (
-              <span className="badge-running text-[10px]">● Live</span>
+              <span className="inline-flex items-center gap-1 text-xs text-teal-700 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse-dot" />
+                Live
+              </span>
             )}
             <StatusBadge status={rfq.status} />
             {rfq.status === "draft" && (
               <button onClick={handleRun} className="btn-primary text-xs px-3 py-1.5">
-                Launch Agents
+                Launch Agents →
               </button>
             )}
             {rfq.status === "completed" && (
@@ -295,31 +297,29 @@ export default function RFQDetailPage() {
         }
       />
 
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Top row: Vendor status cards */}
-        {quotes.length > 0 && (
-          <div className="p-4 border-b border-slate-800">
-            <p className="text-xs text-slate-500 font-mono mb-3 uppercase tracking-wider">
-              Agent Status — {quotes.filter((q) => q.status === "completed").length}/{quotes.length} complete
-            </p>
-            <VendorStatusGrid rfq={rfq} vendorStatuses={vendorStatuses} streamingUrls={streamingUrls} />
-          </div>
-        )}
+      {/* Vendor strip */}
+      {quotes.length > 0 && (
+        <div className="px-4 py-3 border-b border-slate-200 bg-white">
+          <VendorStrip quotes={quotes} vendorStatuses={vendorStatuses} />
+        </div>
+      )}
 
-        {/* Bottom: Feed | Matrix */}
-        <div className="flex-1 overflow-hidden flex">
-          {/* Activity feed */}
-          <div className="w-72 shrink-0 border-r border-slate-800 overflow-hidden flex flex-col">
-            <AgentFeed events={events} />
-          </div>
+      {/* Split panel */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* LEFT: Terminal */}
+        <div className="w-80 shrink-0 border-r border-slate-200 overflow-hidden flex flex-col">
+          <TerminalPanel events={events} />
+        </div>
 
-          {/* Quote matrix */}
-          <div className="flex-1 overflow-y-auto p-5">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
-              Quote Comparison Matrix
-            </h2>
-            <QuoteMatrix quotes={quotes} />
+        {/* RIGHT: Quote table */}
+        <div className="flex-1 overflow-y-auto p-5 bg-white">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-800">Quote Comparison</h2>
+            <span className="text-xs text-slate-400 font-mono">
+              {quotes.filter((q) => q.status === "completed").length}/{quotes.length} complete
+            </span>
           </div>
+          <QuoteTable quotes={quotes} />
         </div>
       </div>
     </div>

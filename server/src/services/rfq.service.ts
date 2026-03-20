@@ -6,7 +6,7 @@ import { AgentRun } from "../models/AgentRun.model";
 import { runSSE } from "./tinyfish.service";
 import { buildGoal } from "./goal-builder.service";
 import { updateVendorStats } from "./vendor.service";
-import { broadcastToRFQ } from "../controllers/agent.controller";
+import { broadcastToRFQ, notifyRFQUpdated } from "../config/socket";
 import { NotFoundError, BadRequestError } from "../utils/errors";
 import { logger } from "../utils/logger";
 import type { IRFQ, IVendor, ExtractedQuote, AgentStreamEvent } from "../types";
@@ -174,6 +174,7 @@ export async function executeRun(rfqId: string): Promise<void> {
     : "completed";
 
   await RFQ.findByIdAndUpdate(rfqId, { status: finalStatus });
+  notifyRFQUpdated(rfqId);
 
   broadcastToRFQ(rfqId, {
     rfqId,

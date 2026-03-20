@@ -6,46 +6,55 @@ import EmptyState from "../components/common/EmptyState";
 import { timeAgo } from "../utils/formatters";
 import type { RFQ } from "../types";
 
-function RFQCard({ rfq }: { rfq: RFQ }) {
+function RFQRow({ rfq }: { rfq: RFQ }) {
   const quotes = rfq.quotes ?? [];
   const completedQuotes = quotes.filter((q) => (q as { status: string }).status === "completed").length;
   const totalVendors = rfq.vendorIds.length;
+  const progressPct = totalVendors > 0 ? (completedQuotes / totalVendors) * 100 : 0;
 
   return (
     <Link
       to={`/rfq/${rfq._id}`}
-      className="card p-4 hover:border-slate-700 hover:bg-slate-900/80 transition-all duration-150 block group"
+      className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 group"
     >
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">
-            {rfq.title}
-          </h3>
-          <p className="text-xs text-slate-500 font-mono mt-0.5">
-            {rfq.specs.productType} · qty {rfq.specs.quantity.toLocaleString()}
-          </p>
+      {/* Title & specs */}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-slate-800 group-hover:text-teal-700 truncate transition-colors">
+          {rfq.title}
         </div>
-        <StatusBadge status={rfq.status} />
+        <div className="text-xs text-slate-400 font-mono mt-0.5 truncate">
+          {rfq.specs.productType} · qty {rfq.specs.quantity.toLocaleString()}
+        </div>
       </div>
 
+      {/* Progress bar (running only) */}
       {rfq.status === "running" && totalVendors > 0 && (
-        <div className="mb-3">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-            <span className="font-mono">Agents running</span>
-            <span className="font-mono text-teal-400">{completedQuotes}/{totalVendors}</span>
+        <div className="w-24 shrink-0">
+          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mb-1">
+            <span>{completedQuotes}/{totalVendors}</span>
           </div>
-          <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+          <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
             <div
-              className="h-full bg-teal-400 rounded-full transition-all duration-500"
-              style={{ width: totalVendors > 0 ? `${(completedQuotes / totalVendors) * 100}%` : "0%" }}
+              className="h-full bg-teal-600 rounded-full transition-all duration-500"
+              style={{ width: `${progressPct}%` }}
             />
           </div>
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-slate-600 font-mono">
-        <span>{totalVendors} vendor{totalVendors !== 1 ? "s" : ""}</span>
-        <span>{timeAgo(rfq.createdAt)}</span>
+      {/* Vendor count */}
+      <div className="w-20 text-right text-xs text-slate-400 font-mono shrink-0">
+        {totalVendors} vendor{totalVendors !== 1 ? "s" : ""}
+      </div>
+
+      {/* Status */}
+      <div className="w-24 flex justify-end shrink-0">
+        <StatusBadge status={rfq.status} />
+      </div>
+
+      {/* Date */}
+      <div className="w-20 text-right text-xs text-slate-400 font-mono shrink-0">
+        {timeAgo(rfq.createdAt)}
       </div>
     </Link>
   );
@@ -63,8 +72,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Header
-        title="Dashboard"
-        subtitle={`${stats.total} RFQ${stats.total !== 1 ? "s" : ""}`}
+        title="Requests for Quote"
         actions={
           <Link to="/rfq/new" className="btn-primary text-xs px-3 py-1.5">
             + New RFQ
@@ -72,51 +80,65 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          {[
-            { label: "Total RFQs", value: stats.total, color: "text-slate-200" },
-            { label: "Running", value: stats.running, color: "text-teal-400" },
-            { label: "Completed", value: stats.completed, color: "text-green-400" },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="card px-4 py-3">
-              <div className={`text-2xl font-bold font-mono ${color}`}>{value}</div>
-              <div className="text-xs text-slate-500 mt-0.5">{label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* RFQ list */}
-        {loading && (
-          <div className="text-sm text-slate-500 font-mono animate-pulse">Loading...</div>
-        )}
-
-        {error && (
-          <div className="card p-4 border-red-900/50 bg-red-900/10">
-            <p className="text-sm text-red-400">{error}</p>
-            <button onClick={refetch} className="text-xs text-slate-400 mt-2 hover:text-slate-200">
-              Retry
-            </button>
-          </div>
-        )}
-
-        {!loading && !error && rfqs.length === 0 && (
-          <EmptyState
-            title="No RFQs yet"
-            description="Create your first RFQ to dispatch agents to vendor websites."
-            actionLabel="+ Create RFQ"
-            actionTo="/rfq/new"
-          />
-        )}
-
-        {!loading && rfqs.length > 0 && (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
-            {rfqs.map((rfq) => (
-              <RFQCard key={rfq._id} rfq={rfq} />
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-5xl mx-auto p-6 space-y-5">
+          {/* Stats bar */}
+          <div className="flex items-center gap-3">
+            {[
+              { label: "Total", value: stats.total, color: "text-slate-700" },
+              { label: "Running", value: stats.running, color: "text-teal-700" },
+              { label: "Completed", value: stats.completed, color: "text-green-700" },
+            ].map(({ label, value, color }) => (
+              <div
+                key={label}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-[6px]"
+                style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
+              >
+                <span className={`text-lg font-bold font-mono ${color}`}>{value}</span>
+                <span className="text-xs text-slate-500">{label}</span>
+              </div>
             ))}
           </div>
-        )}
+
+          {/* Content */}
+          {loading && (
+            <div className="text-sm text-slate-400 font-mono animate-pulse py-4">Loading…</div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-[6px] p-4">
+              <p className="text-sm text-red-700">{error}</p>
+              <button onClick={() => refetch()} className="text-xs text-red-600 hover:text-red-800 mt-2 underline">
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!loading && !error && rfqs.length === 0 && (
+            <EmptyState
+              title="No RFQs yet"
+              description="Create your first RFQ to dispatch agents to vendor websites and collect quotes automatically."
+              actionLabel="+ Create RFQ"
+              actionTo="/rfq/new"
+              icon="+"
+            />
+          )}
+
+          {!loading && rfqs.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-[6px] overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+              {/* Table header */}
+              <div className="flex items-center gap-4 px-5 py-2.5 border-b border-slate-100 bg-slate-50">
+                <div className="flex-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">Title</div>
+                <div className="w-20 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Vendors</div>
+                <div className="w-24 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</div>
+                <div className="w-20 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Created</div>
+              </div>
+              {rfqs.map((rfq) => (
+                <RFQRow key={rfq._id} rfq={rfq} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

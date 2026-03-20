@@ -2,19 +2,21 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { rfqApi, vendorApi } from "../services/api";
 import Header from "../components/layout/Header";
+import { useProfile } from "../hooks/useProfile";
 import type { Vendor } from "../types";
 
 interface CustomField { key: string; value: string }
 
 export default function NewRFQPage() {
   const navigate = useNavigate();
+  const { profile } = useProfile();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [selectedVendors, setSelectedVendors] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [editingContact, setEditingContact] = useState(false);
 
-  // Form state
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -23,11 +25,24 @@ export default function NewRFQPage() {
     dimensions: "",
     material: "",
     color: "",
-    companyName: "",
-    contactName: "",
-    email: "",
-    phone: "",
+    companyName: profile?.companyName ?? "",
+    contactName: profile?.contactName ?? "",
+    email: profile?.email ?? "",
+    phone: profile?.phone ?? "",
   });
+
+  // Sync contact fields from profile when profile loads
+  useEffect(() => {
+    if (profile && !editingContact) {
+      setForm((f) => ({
+        ...f,
+        companyName: profile.companyName,
+        contactName: profile.contactName,
+        email: profile.email,
+        phone: profile.phone,
+      }));
+    }
+  }, [profile, editingContact]);
 
   useEffect(() => {
     vendorApi.list().then((r) => setVendors((r.data as Vendor[]) ?? []));
@@ -43,12 +58,9 @@ export default function NewRFQPage() {
       return next;
     });
 
-  const addCustomField = () =>
-    setCustomFields((f) => [...f, { key: "", value: "" }]);
-
+  const addCustomField = () => setCustomFields((f) => [...f, { key: "", value: "" }]);
   const updateCustomField = (i: number, field: "key" | "value", val: string) =>
     setCustomFields((f) => f.map((cf, idx) => (idx === i ? { ...cf, [field]: val } : cf)));
-
   const removeCustomField = (i: number) =>
     setCustomFields((f) => f.filter((_, idx) => idx !== i));
 
@@ -66,9 +78,7 @@ export default function NewRFQPage() {
     setError(null);
 
     const customFieldsObj = Object.fromEntries(
-      customFields
-        .filter((cf) => cf.key.trim())
-        .map((cf) => [cf.key.trim(), cf.value.trim()])
+      customFields.filter((cf) => cf.key.trim()).map((cf) => [cf.key.trim(), cf.value.trim()])
     );
 
     try {
@@ -93,213 +103,232 @@ export default function NewRFQPage() {
       } as Parameters<typeof rfqApi.create>[0]);
 
       const rfq = res.data as { _id: string };
-
       if (launchImmediately && rfq._id) {
         await rfqApi.run(rfq._id);
-        navigate(`/rfq/${rfq._id}`);
-      } else {
-        navigate(`/rfq/${rfq._id}`);
       }
+      navigate(`/rfq/${rfq._id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create RFQ");
       setSubmitting(false);
     }
   };
 
+  const hasProfile = !!profile;
+  const contactLocked = hasProfile && !editingContact;
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <Header title="New RFQ" subtitle="Configure and dispatch vendor agents" />
+      <Header title="New RFQ" subtitle="Configure and launch vendor agents" />
 
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto p-6 grid grid-cols-2 gap-6">
-          {/* LEFT: Product Specs */}
-          <div className="space-y-5">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-              Product Specifications
-            </h2>
+        <div className="max-w-5xl mx-auto p-6">
+          <div className="grid grid-cols-2 gap-6">
 
-            <div>
-              <label className="label">RFQ Title *</label>
-              <input className="input" placeholder="e.g. 500 Custom Printed Boxes" value={form.title} onChange={set("title")} />
-            </div>
+            {/* LEFT: Product Specs */}
+            <div className="space-y-5">
+              <div className="border-b border-slate-200 pb-2">
+                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Product Specifications
+                </h2>
+              </div>
 
-            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label">Product Type *</label>
-                <input className="input" placeholder="corrugated boxes" value={form.productType} onChange={set("productType")} />
+                <label className="label">RFQ title *</label>
+                <input className="input" placeholder="e.g. 500 Custom Printed Boxes" value={form.title} onChange={set("title")} />
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Product type *</label>
+                  <input className="input" placeholder="corrugated boxes" value={form.productType} onChange={set("productType")} />
+                </div>
+                <div>
+                  <label className="label">Quantity *</label>
+                  <input className="input" type="number" placeholder="500" value={form.quantity} onChange={set("quantity")} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Dimensions</label>
+                  <input className="input" placeholder="12×12×6 in" value={form.dimensions} onChange={set("dimensions")} />
+                </div>
+                <div>
+                  <label className="label">Material</label>
+                  <input className="input" placeholder="corrugated cardboard" value={form.material} onChange={set("material")} />
+                </div>
+              </div>
+
               <div>
-                <label className="label">Quantity *</label>
-                <input className="input" type="number" placeholder="500" value={form.quantity} onChange={set("quantity")} />
+                <label className="label">Color / print specs</label>
+                <input className="input" placeholder="2-color CMYK, matte finish" value={form.color} onChange={set("color")} />
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label">Dimensions</label>
-                <input className="input" placeholder="12x12x6 inches" value={form.dimensions} onChange={set("dimensions")} />
+                <label className="label">Additional notes</label>
+                <textarea
+                  className="input resize-none h-20"
+                  placeholder="Any extra details the agents should know..."
+                  value={form.description}
+                  onChange={set("description")}
+                />
               </div>
+
+              {/* Custom fields */}
               <div>
-                <label className="label">Material</label>
-                <input className="input" placeholder="corrugated cardboard" value={form.material} onChange={set("material")} />
-              </div>
-            </div>
-
-            <div>
-              <label className="label">Color / Print Specs</label>
-              <input className="input" placeholder="2-color CMYK, matte finish" value={form.color} onChange={set("color")} />
-            </div>
-
-            <div>
-              <label className="label">Description</label>
-              <textarea
-                className="input resize-none h-20"
-                placeholder="Any additional details for the agents..."
-                value={form.description}
-                onChange={set("description")}
-              />
-            </div>
-
-            {/* Custom fields */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="label mb-0">Custom Fields</label>
-                <button onClick={addCustomField} className="text-xs text-teal-400 hover:text-teal-300 font-mono">
-                  + Add field
-                </button>
-              </div>
-              <div className="space-y-2">
-                {customFields.map((cf, i) => (
-                  <div key={i} className="flex gap-2">
-                    <input
-                      className="input text-xs"
-                      placeholder="Field name"
-                      value={cf.key}
-                      onChange={(e) => updateCustomField(i, "key", e.target.value)}
-                    />
-                    <input
-                      className="input text-xs"
-                      placeholder="Value"
-                      value={cf.value}
-                      onChange={(e) => updateCustomField(i, "value", e.target.value)}
-                    />
-                    <button
-                      onClick={() => removeCustomField(i)}
-                      className="text-slate-500 hover:text-red-400 px-2 text-sm"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT: Contact + Vendors */}
-          <div className="space-y-5">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-              Contact Information
-            </h2>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Company Name *</label>
-                <input className="input" placeholder="Acme Corp" value={form.companyName} onChange={set("companyName")} />
-              </div>
-              <div>
-                <label className="label">Contact Name</label>
-                <input className="input" placeholder="Jane Smith" value={form.contactName} onChange={set("contactName")} />
+                <div className="flex items-center justify-between mb-2">
+                  <label className="label mb-0">Custom fields</label>
+                  <button onClick={addCustomField} className="text-xs text-teal-600 hover:text-teal-700 font-medium">
+                    + Add field
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {customFields.map((cf, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input className="input text-xs" placeholder="Field name" value={cf.key}
+                        onChange={(e) => updateCustomField(i, "key", e.target.value)} />
+                      <input className="input text-xs" placeholder="Value" value={cf.value}
+                        onChange={(e) => updateCustomField(i, "value", e.target.value)} />
+                      <button onClick={() => removeCustomField(i)}
+                        className="text-slate-400 hover:text-red-600 px-2 text-lg leading-none transition-colors">×</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Email *</label>
-                <input className="input" type="email" placeholder="jane@acme.com" value={form.email} onChange={set("email")} />
+            {/* RIGHT: Contact + Vendors */}
+            <div className="space-y-5">
+              {/* Contact info */}
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Contact Information
+                </h2>
+                {hasProfile && (
+                  <button
+                    onClick={() => setEditingContact((v) => !v)}
+                    className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+                  >
+                    {editingContact ? "Lock" : "Edit"}
+                  </button>
+                )}
               </div>
-              <div>
-                <label className="label">Phone</label>
-                <input className="input" placeholder="+1 555 000 0000" value={form.phone} onChange={set("phone")} />
-              </div>
-            </div>
 
-            {/* Vendor Selection */}
-            <div>
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
-                Select Vendors ({selectedVendors.size} selected)
-              </h2>
-
-              {vendors.length === 0 && (
-                <p className="text-sm text-slate-500 font-mono">
-                  No vendors available.{" "}
-                  <a href="/vendors" className="text-teal-400 hover:underline">Add vendors →</a>
-                </p>
+              {hasProfile && !editingContact && (
+                <div className="bg-teal-50 border border-teal-200 rounded-[6px] px-3 py-2.5 text-xs text-teal-700">
+                  Pre-filled from your profile — click Edit to override for this RFQ.
+                </div>
               )}
 
-              <div className="space-y-2">
-                {vendors.map((v) => {
-                  const selected = selectedVendors.has(v._id);
-                  return (
-                    <button
-                      key={v._id}
-                      type="button"
-                      onClick={() => toggleVendor(v._id)}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md border text-left transition-all ${
-                        selected
-                          ? "bg-teal-400/10 border-teal-400/30 text-teal-400"
-                          : "bg-slate-800/50 border-slate-700 text-slate-300 hover:border-slate-600"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${selected ? "bg-teal-400" : "bg-slate-600"}`} />
-                        <div>
-                          <div className="text-sm font-medium">{v.name}</div>
-                          <div className="text-xs text-slate-500 font-mono">{v.category}</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Company name *</label>
+                  <input className={`input ${contactLocked ? "opacity-60 cursor-default" : ""}`}
+                    placeholder="Acme Corp" value={form.companyName} onChange={set("companyName")} readOnly={contactLocked} />
+                </div>
+                <div>
+                  <label className="label">Contact name</label>
+                  <input className={`input ${contactLocked ? "opacity-60 cursor-default" : ""}`}
+                    placeholder="Jane Smith" value={form.contactName} onChange={set("contactName")} readOnly={contactLocked} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Email *</label>
+                  <input className={`input ${contactLocked ? "opacity-60 cursor-default" : ""}`}
+                    type="email" placeholder="jane@acme.com" value={form.email} onChange={set("email")} readOnly={contactLocked} />
+                </div>
+                <div>
+                  <label className="label">Phone</label>
+                  <input className={`input ${contactLocked ? "opacity-60 cursor-default" : ""}`}
+                    placeholder="+1 555 000 0000" value={form.phone} onChange={set("phone")} readOnly={contactLocked} />
+                </div>
+              </div>
+
+              {/* Vendor selection */}
+              <div>
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+                  <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Vendors
+                    {selectedVendors.size > 0 && (
+                      <span className="ml-2 text-teal-600">{selectedVendors.size} selected</span>
+                    )}
+                  </h2>
+                </div>
+
+                {vendors.length === 0 && (
+                  <p className="text-sm text-slate-500">
+                    No vendors available.{" "}
+                    <a href="/vendors" className="text-teal-600 hover:underline">Add vendors →</a>
+                  </p>
+                )}
+
+                <div className="space-y-1.5">
+                  {vendors.map((v) => {
+                    const selected = selectedVendors.has(v._id);
+                    return (
+                      <button
+                        key={v._id}
+                        type="button"
+                        onClick={() => toggleVendor(v._id)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-[6px] border text-left transition-all ${
+                          selected
+                            ? "bg-teal-50 border-teal-300 text-teal-800"
+                            : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${selected ? "bg-teal-600" : "bg-slate-300"}`} />
+                          <div>
+                            <div className="text-sm font-medium">{v.name}</div>
+                            <div className="text-xs text-slate-400 font-mono">{v.category}</div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs font-mono text-slate-500">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                          v.browserProfile === "stealth"
-                            ? "bg-amber-400/10 text-amber-400"
-                            : "bg-slate-700 text-slate-400"
-                        }`}>
-                          {v.browserProfile}
-                        </span>
-                        <span>{v.reliability}%</span>
-                      </div>
-                    </button>
-                  );
-                })}
+                        <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                            v.browserProfile === "stealth"
+                              ? "bg-amber-50 text-amber-700 border border-amber-200"
+                              : "bg-slate-100 text-slate-500"
+                          }`}>
+                            {v.browserProfile}
+                          </span>
+                          <span>{v.reliability}%</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
 
-            {error && (
-              <div className="card p-3 border-red-900/50 bg-red-900/10">
-                <p className="text-sm text-red-400">{error}</p>
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-[6px] p-3">
+                  <p className="text-sm text-red-700">{error}</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  disabled={submitting}
+                  onClick={() => handleSubmit(true)}
+                  className="btn-primary flex-1"
+                >
+                  {submitting ? "Launching…" : "Launch Agents →"}
+                </button>
+                <button
+                  disabled={submitting}
+                  onClick={() => handleSubmit(false)}
+                  className="btn-secondary px-4"
+                >
+                  Save Draft
+                </button>
               </div>
-            )}
 
-            {/* Action buttons */}
-            <div className="flex gap-3 pt-2">
-              <button
-                disabled={submitting}
-                onClick={() => handleSubmit(true)}
-                className="btn-primary flex-1"
-              >
-                {submitting ? "Launching…" : "Launch Agents →"}
-              </button>
-              <button
-                disabled={submitting}
-                onClick={() => handleSubmit(false)}
-                className="btn-secondary px-4"
-              >
-                Save Draft
-              </button>
+              <p className="text-xs text-slate-400 font-mono">
+                Est. cost ~${((selectedVendors.size * 12) * 0.013).toFixed(2)} for {selectedVendors.size} vendor{selectedVendors.size !== 1 ? "s" : ""}
+              </p>
             </div>
-
-            <p className="text-xs text-slate-600 font-mono">
-              Est. cost: ~${((selectedVendors.size * 12) * 0.013).toFixed(2)} for {selectedVendors.size} vendor{selectedVendors.size !== 1 ? "s" : ""}
-            </p>
           </div>
         </div>
       </div>

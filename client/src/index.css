@@ -4,9 +4,11 @@
 
 @layer base {
   html {
-    font-family: "Outfit", system-ui, sans-serif;
-    background-color: #0f1419;
-    color: #f1f5f9;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    background-color: #FAFAFA;
+    color: #0F172A;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   * {
@@ -14,62 +16,106 @@
   }
 
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {
-    background: #1a1f2e;
+    background: #F4F6F8;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #2e3448;
+    background: #CBD5E1;
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #00d4aa;
+    background: #0D9488;
   }
 }
 
 @layer components {
+  /* ── Cards ─────────────────────────────────────────────── */
   .card {
-    @apply bg-slate-900 border border-slate-800 rounded-lg;
+    @apply bg-white border border-slate-200 rounded-[6px];
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   }
 
+  /* ── Buttons ────────────────────────────────────────────── */
   .btn-primary {
-    @apply bg-teal-400 text-slate-950 font-semibold px-4 py-2 rounded-md hover:bg-teal-500 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center font-semibold px-4 py-2 rounded-[6px] text-sm
+           bg-teal-600 text-white hover:bg-teal-700
+           transition-colors duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply bg-slate-800 text-slate-200 font-medium px-4 py-2 rounded-md border border-slate-700 hover:bg-slate-700 transition-colors duration-150;
+    @apply inline-flex items-center justify-center font-medium px-4 py-2 rounded-[6px] text-sm
+           bg-white text-slate-700 border border-slate-200
+           hover:border-slate-300 hover:bg-slate-50
+           transition-colors duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
+  .btn-ghost {
+    @apply inline-flex items-center justify-center font-medium px-3 py-1.5 rounded-[6px] text-sm
+           text-slate-600 hover:bg-slate-100 hover:text-slate-800
+           transition-colors duration-150;
+  }
+
+  /* ── Status badges ──────────────────────────────────────── */
   .badge-running {
-    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-teal-400/10 text-teal-400 border border-teal-400/20;
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium
+           bg-teal-50 text-teal-700 border border-teal-200;
   }
 
   .badge-completed {
-    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-green-400/10 text-green-400 border border-green-400/20;
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium
+           bg-green-50 text-green-700 border border-green-200;
   }
 
   .badge-failed {
-    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-red-400/10 text-red-400 border border-red-400/20;
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium
+           bg-red-50 text-red-700 border border-red-200;
   }
 
   .badge-pending {
-    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-amber-400/10 text-amber-400 border border-amber-400/20;
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium
+           bg-amber-50 text-amber-700 border border-amber-200;
   }
 
   .badge-draft {
-    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-mono font-medium bg-slate-700/50 text-slate-400 border border-slate-700;
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium
+           bg-slate-100 text-slate-600 border border-slate-200;
   }
 
+  /* ── Form elements ──────────────────────────────────────── */
   .input {
-    @apply w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 transition-colors;
+    @apply w-full bg-white border border-slate-200 rounded-[6px] px-3 py-2
+           text-slate-900 placeholder-slate-400 text-sm
+           focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10
+           transition-colors;
   }
 
   .label {
-    @apply block text-sm font-medium text-slate-400 mb-1.5;
+    @apply block text-sm font-medium text-slate-700 mb-1.5;
+  }
+
+  /* ── Sidebar nav ────────────────────────────────────────── */
+  .nav-item {
+    @apply relative flex items-center gap-3 px-3 py-2 rounded-[4px] text-sm font-medium
+           text-slate-600 hover:text-slate-900 hover:bg-slate-100
+           transition-colors duration-150;
+  }
+
+  .nav-item-active {
+    @apply text-teal-700 bg-teal-50 hover:bg-teal-50 hover:text-teal-700;
+  }
+
+  /* ── Terminal ───────────────────────────────────────────── */
+  .terminal {
+    background-color: #0F172A;
+    color: #E2E8F0;
+    font-family: "JetBrains Mono", monospace;
   }
 }

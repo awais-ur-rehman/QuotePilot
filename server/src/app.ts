@@ -1,10 +1,12 @@
 import express from "express";
+import http from "http";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 
 import { env } from "./config/env";
 import { connectDB } from "./config/db";
+import { initSocket } from "./config/socket";
 import { errorMiddleware } from "./middleware/error.middleware";
 import { logger } from "./utils/logger";
 
@@ -13,6 +15,7 @@ import vendorRoutes from "./routes/vendor.routes";
 import agentRoutes from "./routes/agent.routes";
 
 const app = express();
+const httpServer = http.createServer(app);
 
 // ─── Security & utility middleware ───────────────────────────────────────────
 app.use(helmet());
@@ -48,11 +51,13 @@ app.use(errorMiddleware);
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 async function bootstrap() {
   await connectDB();
+  initSocket(httpServer);
 
-  app.listen(env.PORT, () => {
+  httpServer.listen(env.PORT, () => {
     logger.info(`🚀 QuotePilot server running on port ${env.PORT} [${env.NODE_ENV}]`);
     logger.info(`   Health: http://localhost:${env.PORT}/health`);
     logger.info(`   API:    http://localhost:${env.PORT}/api`);
+    logger.info(`   Socket: ws://localhost:${env.PORT}`);
   });
 }
 

@@ -5,18 +5,44 @@ import { rfqApi } from "../services/api";
 import Header from "../components/layout/Header";
 import StatusBadge from "../components/common/StatusBadge";
 import { formatCurrency } from "../utils/formatters";
-import type { AgentStreamEvent, Quote } from "../types";
+import type { AgentStreamEvent, Quote, PopulatedVendorRef } from "../types";
 import { useState, useRef, useEffect, memo } from "react";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getVendor(q: Quote): PopulatedVendorRef | null {
+  if (typeof q.vendorId === "object" && q.vendorId !== null) return q.vendorId;
+  return null;
+}
+
+function getVendorId(q: Quote): string {
+  if (typeof q.vendorId === "object" && q.vendorId !== null) return q.vendorId._id;
+  return q.vendorId as string;
+}
 
 // ─── Quote Detail Overlay ─────────────────────────────────────────────────────
 
 function QuoteDetailOverlay({ quote, onClose }: { quote: Quote; onClose: () => void }) {
-  const vendor = quote.vendor as { name?: string; website?: string } | undefined;
+  const vendor = getVendor(quote);
 
-  const Field = ({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) => (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{label}</span>
-      <span className={`text-sm text-slate-800 ${mono ? "font-mono" : ""}`}>{value ?? "—"}</span>
+  const Field = ({
+    label,
+    value,
+    mono = false,
+    wide = false,
+  }: {
+    label: string;
+    value: React.ReactNode;
+    mono?: boolean;
+    wide?: boolean;
+  }) => (
+    <div className={wide ? "col-span-2" : ""}>
+      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+        {label}
+      </span>
+      <span className={`text-sm text-slate-800 leading-relaxed ${mono ? "font-mono" : ""}`}>
+        {value ?? <span className="text-slate-300">—</span>}
+      </span>
     </div>
   );
 
@@ -33,13 +59,17 @@ function QuoteDetailOverlay({ quote, onClose }: { quote: Quote; onClose: () => v
         style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.12)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal header */}
-        <div className={`px-5 py-4 border-b border-slate-100 flex items-start justify-between ${
-          isSuccess ? "bg-teal-50" : isFailed ? "bg-red-50" : "bg-slate-50"
-        }`}>
+        {/* Header */}
+        <div
+          className={`px-5 py-4 border-b border-slate-100 flex items-start justify-between ${
+            isSuccess ? "bg-teal-50" : isFailed ? "bg-red-50" : "bg-slate-50"
+          }`}
+        >
           <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="text-base font-semibold text-slate-900">{vendor?.name ?? "Unknown Vendor"}</span>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-base font-semibold text-slate-900">
+                {vendor?.name ?? "Unknown Vendor"}
+              </span>
               <StatusBadge status={quote.status} />
             </div>
             {vendor?.website && (
@@ -52,6 +82,9 @@ function QuoteDetailOverlay({ quote, onClose }: { quote: Quote; onClose: () => v
                 {vendor.website}
               </a>
             )}
+            {vendor?.category && (
+              <span className="ml-3 text-xs text-slate-400">{vendor.category}</span>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -61,40 +94,59 @@ function QuoteDetailOverlay({ quote, onClose }: { quote: Quote; onClose: () => v
           </button>
         </div>
 
-        {/* Error state */}
+        {/* Error */}
         {isFailed && quote.errorMessage && (
           <div className="px-5 py-3 bg-red-50 border-b border-red-100">
+            <p className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-0.5">
+              Failure reason
+            </p>
             <p className="text-sm text-red-700">{quote.errorMessage}</p>
           </div>
         )}
 
-        {/* Fields grid */}
+        {/* Pricing + details grid */}
         {isSuccess && (
-          <div className="px-5 py-5 grid grid-cols-2 gap-5">
+          <div className="px-5 py-5 grid grid-cols-2 gap-x-6 gap-y-4 border-b border-slate-100">
             <Field label="Unit Price" value={formatCurrency(quote.unitPrice, quote.currency)} mono />
             <Field label="Total Price" value={formatCurrency(quote.price, quote.currency)} mono />
             <Field label="Lead Time" value={quote.leadTime} />
-            <Field label="Min. Order (MOQ)" value={quote.minimumOrder?.toLocaleString()} mono />
-            <Field label="Shipping" value={formatCurrency(quote.shippingCost, quote.currency)} mono />
+            <Field label="Min. Order (MOQ)" value={
+              quote.minimumOrder ? `${quote.minimumOrder.toLocaleString()} units` : undefined
+            } />
+            <Field
+              label="Shipping"
+              value={
+                quote.shippingCost != null
+                  ? formatCurrency(quote.shippingCost, quote.currency)
+                  : "Not provided"
+              }
+              mono
+            />
             <Field label="Currency" value={quote.currency ?? "USD"} mono />
           </div>
         )}
 
         {/* Notes */}
         {quote.notes && (
-          <div className="px-5 pb-4">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Notes</span>
-            <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded-[6px] p-3 border border-slate-200">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+              Agent Notes
+            </span>
+            <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded-[6px] p-3 border border-slate-200 max-h-36 overflow-y-auto">
               {quote.notes}
             </p>
           </div>
         )}
 
         {/* Footer meta */}
-        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+        <div className="px-5 py-3 bg-slate-50 flex items-center justify-between">
           <div className="flex items-center gap-4 text-xs text-slate-400 font-mono">
-            {quote.stepsUsed !== undefined && <span>{quote.stepsUsed} steps</span>}
-            {quote.costUsd !== undefined && <span>~${quote.costUsd.toFixed(3)} cost</span>}
+            {quote.stepsUsed !== undefined && (
+              <span>{quote.stepsUsed} agent steps</span>
+            )}
+            {quote.costUsd !== undefined && (
+              <span>~${quote.costUsd.toFixed(3)} cost</span>
+            )}
           </div>
           <button onClick={onClose} className="btn-secondary text-xs px-3 py-1.5">
             Close
@@ -105,7 +157,7 @@ function QuoteDetailOverlay({ quote, onClose }: { quote: Quote; onClose: () => v
   );
 }
 
-// ─── Quote Table (4 columns) ──────────────────────────────────────────────────
+// ─── Quote Table ──────────────────────────────────────────────────────────────
 
 function QuoteTable({
   quotes,
@@ -114,9 +166,19 @@ function QuoteTable({
   quotes: Quote[];
   onSelect: (q: Quote) => void;
 }) {
-  const sorted = [...quotes].sort((a, b) => (a.unitPrice ?? Infinity) - (b.unitPrice ?? Infinity));
-  const bestUnitPrice =
-    Math.min(...quotes.filter((q) => q.unitPrice !== undefined).map((q) => q.unitPrice!)) || Infinity;
+  const [sortKey, setSortKey] = useState<"unitPrice" | "price">("unitPrice");
+
+  const sorted = [...quotes].sort(
+    (a, b) => (a[sortKey] ?? Infinity) - (b[sortKey] ?? Infinity)
+  );
+
+  const completedPrices = quotes
+    .filter((q) => q.status === "completed" && q.unitPrice !== undefined)
+    .map((q) => q.unitPrice!);
+  const bestUnitPrice = completedPrices.length > 0 ? Math.min(...completedPrices) : Infinity;
+
+  const isClickable = (q: Quote) =>
+    q.status === "completed" || q.status === "failed" || q.status === "no_quote";
 
   if (quotes.length === 0) {
     return (
@@ -126,77 +188,122 @@ function QuoteTable({
     );
   }
 
-  const isClickable = (q: Quote) =>
-    q.status === "completed" || q.status === "failed" || q.status === "no_quote";
-
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="border-b border-slate-200 bg-slate-50 sticky top-0">
-          {["Vendor", "Unit Price", "Lead Time", "Status"].map((h) => (
-            <th
-              key={h}
-              className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3 first:pl-5 last:pr-5"
-            >
-              {h}
+    <div>
+      {/* Sort pills */}
+      <div className="flex items-center gap-1.5 px-5 pb-3">
+        <span className="text-xs text-slate-400 mr-1">Sort by:</span>
+        {(["unitPrice", "price"] as const).map((k) => (
+          <button
+            key={k}
+            onClick={() => setSortKey(k)}
+            className={`text-xs px-2.5 py-0.5 rounded font-medium transition-colors ${
+              sortKey === k
+                ? "bg-teal-50 text-teal-700 border border-teal-200"
+                : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            {k === "unitPrice" ? "Unit Price" : "Total"}
+          </button>
+        ))}
+      </div>
+
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50">
+            <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-5 py-3">
+              Vendor
             </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((q) => {
-          const isBest = q.unitPrice !== undefined && q.unitPrice === bestUnitPrice;
-          const vendor = q.vendor as { name?: string } | undefined;
-          const clickable = isClickable(q);
+            <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">
+              Unit Price
+            </th>
+            <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">
+              Total
+            </th>
+            <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3 pr-5">
+              Lead Time
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((q) => {
+            const vendor = getVendor(q);
+            const isBest = q.status === "completed" && q.unitPrice === bestUnitPrice;
+            const clickable = isClickable(q);
+            const isPending = q.status === "pending" || q.status === "running";
 
-          return (
-            <tr
-              key={q._id}
-              onClick={() => clickable && onSelect(q)}
-              className={[
-                "border-b border-slate-100 transition-colors",
-                isBest ? "bg-teal-50/60" : "",
-                clickable ? "cursor-pointer hover:bg-slate-50" : "opacity-70",
-              ].join(" ")}
-            >
-              {/* Vendor */}
-              <td className="px-4 py-3.5 pl-5">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-800">{vendor?.name ?? "—"}</span>
-                  {isBest && (
-                    <span className="text-[10px] bg-teal-100 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded font-bold tracking-wide">
-                      BEST
+            return (
+              <tr
+                key={q._id}
+                onClick={() => clickable && onSelect(q)}
+                className={[
+                  "border-b border-slate-100 transition-colors group",
+                  isBest ? "bg-teal-50/50" : "",
+                  clickable
+                    ? "cursor-pointer hover:bg-slate-50"
+                    : isPending
+                    ? "opacity-60"
+                    : "",
+                ].join(" ")}
+              >
+                {/* Vendor + status */}
+                <td className="px-5 py-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-800">
+                          {vendor?.name ?? "—"}
+                        </span>
+                        {isBest && (
+                          <span className="text-[9px] bg-teal-600 text-white px-1.5 py-0.5 rounded font-bold tracking-widest">
+                            BEST
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5">
+                        <StatusBadge status={q.status} />
+                      </div>
+                    </div>
+                  </div>
+                </td>
+
+                {/* Unit Price */}
+                <td className="px-4 py-3.5">
+                  <span
+                    className={`font-mono font-semibold text-sm ${
+                      isBest ? "text-teal-700" : q.unitPrice ? "text-slate-800" : "text-slate-300"
+                    }`}
+                  >
+                    {formatCurrency(q.unitPrice, q.currency)}
+                  </span>
+                </td>
+
+                {/* Total */}
+                <td className="px-4 py-3.5">
+                  <span className="font-mono text-slate-600">
+                    {formatCurrency(q.price, q.currency)}
+                  </span>
+                </td>
+
+                {/* Lead Time + click hint */}
+                <td className="px-4 py-3.5 pr-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500 text-xs">
+                      {q.leadTime ?? (isPending ? "Pending…" : "—")}
                     </span>
-                  )}
-                </div>
-              </td>
-
-              {/* Unit Price */}
-              <td className={`px-4 py-3.5 font-mono font-semibold ${isBest ? "text-teal-700" : "text-slate-800"}`}>
-                {formatCurrency(q.unitPrice, q.currency)}
-              </td>
-
-              {/* Lead Time */}
-              <td className="px-4 py-3.5 text-slate-500">
-                {q.leadTime ?? "—"}
-              </td>
-
-              {/* Status + click hint */}
-              <td className="px-4 py-3.5 pr-5">
-                <div className="flex items-center justify-between gap-3">
-                  <StatusBadge status={q.status} />
-                  {clickable && (
-                    <span className="text-[10px] text-slate-300 group-hover:text-slate-400 font-medium">
-                      View →
-                    </span>
-                  )}
-                </div>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                    {clickable && (
+                      <span className="text-[11px] text-slate-300 group-hover:text-teal-600 transition-colors font-medium shrink-0">
+                        Details →
+                      </span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -212,8 +319,9 @@ function VendorStrip({
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {quotes.map((q) => {
-        const vendor = q.vendor as { name?: string } | undefined;
-        const liveStatus = vendorStatuses.get(q.vendorId);
+        const vendor = getVendor(q);
+        const vid = getVendorId(q);
+        const liveStatus = vendorStatuses.get(vid);
         const isRunning = liveStatus === "PROGRESS" || liveStatus === "STARTED";
         const isComplete = liveStatus === "COMPLETE" || q.status === "completed";
         const isError = liveStatus === "ERROR" || q.status === "failed";
@@ -235,8 +343,8 @@ function VendorStrip({
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
             <span className="font-medium text-slate-700">{vendor?.name ?? "Vendor"}</span>
             {q.unitPrice !== undefined && (
-              <span className="text-slate-400 font-mono text-[10px] ml-1">
-                {formatCurrency(q.unitPrice, q.currency)}
+              <span className="text-slate-400 font-mono text-[10px] ml-0.5">
+                {formatCurrency(q.unitPrice, q.currency)}/unit
               </span>
             )}
           </div>
@@ -246,7 +354,7 @@ function VendorStrip({
   );
 }
 
-// ─── Terminal Panel (bottom bar) ──────────────────────────────────────────────
+// ─── Terminal Panel ───────────────────────────────────────────────────────────
 
 const TerminalRow = memo(function TerminalRow({ event }: { event: AgentStreamEvent }) {
   if (!event.vendorName || event.vendorName === "System") return null;
@@ -286,10 +394,15 @@ const TerminalRow = memo(function TerminalRow({ event }: { event: AgentStreamEve
   );
 });
 
-function TerminalPanel({ events, connected }: { events: AgentStreamEvent[]; connected: boolean }) {
+function TerminalPanel({
+  events,
+  connected,
+}: {
+  events: AgentStreamEvent[];
+  connected: boolean;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom on new events
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -298,8 +411,8 @@ function TerminalPanel({ events, connected }: { events: AgentStreamEvent[]; conn
 
   return (
     <div className="terminal flex flex-col h-full overflow-hidden border-l border-slate-700/40">
-      {/* Terminal chrome */}
-      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-slate-700/50 shrink-0">
+      {/* Chrome bar */}
+      <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-slate-700/50 shrink-0">
         <span className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
         <span className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
         <span className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
@@ -308,7 +421,7 @@ function TerminalPanel({ events, connected }: { events: AgentStreamEvent[]; conn
           <span className="text-slate-600">—</span>
           {events.length} events
           {connected && (
-            <span className="flex items-center gap-1 text-teal-400">
+            <span className="flex items-center gap-1 text-teal-400 ml-1">
               <span className="w-1 h-1 rounded-full bg-teal-400 animate-pulse-dot" />
               live
             </span>
@@ -316,8 +429,8 @@ function TerminalPanel({ events, connected }: { events: AgentStreamEvent[]; conn
         </span>
       </div>
 
-      {/* Scrollable log area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-2">
+      {/* Log area */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-2.5">
         {events.length === 0 ? (
           <div className="text-[11px] font-mono text-slate-600 flex items-center gap-1 pt-1">
             <span className="text-teal-500">$</span>
@@ -405,17 +518,15 @@ export default function RFQDetailPage() {
       <div className="flex-1 overflow-hidden flex">
         {/* Left: Quote table */}
         <div className="flex-1 overflow-y-auto bg-white">
-          {quotes.length > 0 && (
-            <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-800">Quote Comparison</h2>
-              <div className="flex items-center gap-3 text-xs text-slate-400">
-                <span className="font-mono">
-                  {quotes.filter((q) => q.status === "completed").length}/{quotes.length} complete
-                </span>
-                <span>Click a row to see full details</span>
-              </div>
-            </div>
-          )}
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-800">Quote Comparison</h2>
+            <span className="text-xs text-slate-400">
+              {quotes.filter((q) => q.status === "completed").length}/{quotes.length} complete
+              {quotes.some((q) => q.status === "completed") && (
+                <span className="ml-2 text-slate-300">· click row for details</span>
+              )}
+            </span>
+          </div>
           <QuoteTable quotes={quotes} onSelect={setSelectedQuote} />
         </div>
 

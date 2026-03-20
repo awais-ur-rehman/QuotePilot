@@ -48,10 +48,19 @@ export interface RFQ {
   quotes?: Quote[];
 }
 
+// Mongoose populates vendorId in-place → it becomes an object after the API call
+export interface PopulatedVendorRef {
+  _id: string;
+  name: string;
+  website: string;
+  category: string;
+}
+
 export interface Quote {
   _id: string;
   rfqId: string;
-  vendorId: string;
+  // populated by server: arrives as an object, not a raw string
+  vendorId: string | PopulatedVendorRef;
   agentRunId: string;
   status: QuoteStatus;
   price?: number;
@@ -67,7 +76,6 @@ export interface Quote {
   costUsd?: number;
   createdAt: string;
   updatedAt: string;
-  vendor?: Vendor;
 }
 
 export interface AgentRun {

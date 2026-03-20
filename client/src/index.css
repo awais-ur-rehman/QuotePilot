@@ -118,4 +118,60 @@
     color: #E2E8F0;
     font-family: "JetBrains Mono", monospace;
   }
+
+  /* ── Landing page ───────────────────────────────────────── */
+  .landing-hero {
+    background-color: #0A0F1E;
+  }
+
+  .shimmer-btn {
+    background: linear-gradient(90deg, #0D9488 0%, #14b8a6 40%, #0D9488 60%, #0f766e 100%);
+    background-size: 200% auto;
+    animation: shimmer-move 2.5s linear infinite;
+  }
+
+  .glow-card:hover {
+    box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.3), 0 8px 30px rgba(13, 148, 136, 0.12);
+  }
+}
+
+@keyframes aurora-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(40px, -50px) scale(1.12); }
+  66%       { transform: translate(-30px, 30px) scale(0.92); }
+}
+@keyframes aurora-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  40%       { transform: translate(-60px, 40px) scale(1.08); }
+  80%       { transform: translate(30px, -30px) scale(0.95); }
+}
+@keyframes aurora-drift-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%       { transform: translate(50px, 60px) scale(1.15); }
+}
+
+.animate-aurora-1 { animation: aurora-drift-1 14s ease-in-out infinite; }
+.animate-aurora-2 { animation: aurora-drift-2 18s ease-in-out infinite; }
+.animate-aurora-3 { animation: aurora-drift-3 22s ease-in-out infinite; }
+
+@keyframes shimmer-move {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes float-card {
+  0%, 100% { transform: translateY(0px) rotate(var(--card-rot, 0deg)); }
+  50%       { transform: translateY(-10px) rotate(var(--card-rot, 0deg)); }
+}
+
+@keyframes blink-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+.animate-blink { animation: blink-dot 1.2s ease-in-out infinite; }
+
+@keyframes line-grow {
+  from { width: 0; }
+  to   { width: 100%; }
 }

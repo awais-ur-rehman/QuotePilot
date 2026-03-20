@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AppShell from "./components/layout/AppShell";
+import LandingPage from "./pages/LandingPage";
 import OverviewPage from "./pages/OverviewPage";
 import RequestsPage from "./pages/RequestsPage";
 import NewRFQPage from "./pages/NewRFQPage";
@@ -12,6 +13,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/landing" element={<LandingPage />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/rfqs" element={<RequestsPage />} />

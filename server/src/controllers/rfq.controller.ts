@@ -71,3 +71,8 @@ export const deleteRFQ = asyncHandler(async (req: Request, res: Response) => {
   await rfqService.deleteRFQ(req.params.id);
   res.json({ status: "success", message: "RFQ deleted" });
 });
+
+export const cancelRFQ = asyncHandler(async (req: Request, res: Response) => {
+  await rfqService.cancelRFQRun(req.params.id);
+  res.json({ status: "success", message: "Run cancelled" });
+});

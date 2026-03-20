@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
+import toast from "react-hot-toast";
 import { rfqApi, vendorApi } from "../services/api";
 import Header from "../components/layout/Header";
 import { useProfile } from "../hooks/useProfile";
@@ -105,10 +106,15 @@ export default function NewRFQPage() {
       const rfq = res.data as { _id: string };
       if (launchImmediately && rfq._id) {
         await rfqApi.run(rfq._id);
+        toast.success("Agents launched!");
+      } else {
+        toast.success("RFQ saved as draft");
       }
       navigate(`/rfq/${rfq._id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create RFQ");
+      const msg = err instanceof Error ? err.message : "Failed to create RFQ";
+      setError(msg);
+      toast.error(msg);
       setSubmitting(false);
     }
   };
@@ -118,7 +124,15 @@ export default function NewRFQPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <Header title="New RFQ" subtitle="Configure and launch vendor agents" />
+      <Header
+        title="New RFQ"
+        subtitle="Configure and launch vendor agents"
+        actions={
+          <Link to="/" className="text-xs text-slate-500 hover:text-slate-700 font-medium transition-colors">
+            ← Back
+          </Link>
+        }
+      />
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto p-6">
@@ -260,7 +274,7 @@ export default function NewRFQPage() {
                 {vendors.length === 0 && (
                   <p className="text-sm text-slate-500">
                     No vendors available.{" "}
-                    <a href="/vendors" className="text-teal-600 hover:underline">Add vendors →</a>
+                    <Link to="/vendors" className="text-teal-600 hover:underline">Add vendors →</Link>
                   </p>
                 )}
 

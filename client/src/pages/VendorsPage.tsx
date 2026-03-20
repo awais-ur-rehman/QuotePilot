@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
+import toast from "react-hot-toast";
 import { vendorApi } from "../services/api";
 import Header from "../components/layout/Header";
 import EmptyState from "../components/common/EmptyState";
+import ConfirmDialog from "../components/common/ConfirmDialog";
 import type { Vendor } from "../types";
 
 // ─── Slide-in Panel ───────────────────────────────────────────────────────────
@@ -40,13 +42,17 @@ function VendorPanel({
     try {
       if (vendor) {
         await vendorApi.update(vendor._id, form as Partial<Vendor>);
+        toast.success("Vendor updated");
       } else {
         await vendorApi.create({ ...form, isActive: true } as Omit<Vendor, "_id" | "reliability" | "avgSteps" | "createdAt" | "updatedAt">);
+        toast.success("Vendor added");
       }
       onSave();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      const msg = err instanceof Error ? err.message : "Failed to save";
+      setError(msg);
+      toast.error(msg);
       setSaving(false);
     }
   };
@@ -202,6 +208,8 @@ export default function VendorsPage() {
   const [loading, setLoading] = useState(true);
   const [showPanel, setShowPanel] = useState(false);
   const [editTarget, setEditTarget] = useState<Vendor | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -212,10 +220,19 @@ export default function VendorsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this vendor?")) return;
-    await vendorApi.delete(id);
-    load();
+  const handleDelete = async () => {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
+    try {
+      await vendorApi.delete(confirmDeleteId);
+      setConfirmDeleteId(null);
+      load();
+      toast.success("Vendor deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete vendor");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const openAdd = () => { setEditTarget(null); setShowPanel(true); };
@@ -263,7 +280,7 @@ export default function VendorsPage() {
                   key={v._id}
                   vendor={v}
                   onEdit={() => openEdit(v)}
-                  onDelete={() => handleDelete(v._id)}
+                  onDelete={() => setConfirmDeleteId(v._id)}
                 />
               ))}
             </div>
@@ -276,6 +293,17 @@ export default function VendorsPage() {
           vendor={editTarget}
           onClose={closePanel}
           onSave={load}
+        />
+      )}
+
+      {confirmDeleteId && (
+        <ConfirmDialog
+          title="Delete vendor"
+          message="This will permanently remove the vendor. Existing quotes referencing this vendor will still be visible."
+          confirmLabel={deleting ? "Deleting…" : "Delete"}
+          danger
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDeleteId(null)}
         />
       )}
     </div>

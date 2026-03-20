@@ -3,7 +3,7 @@ import { RFQ } from "../models/RFQ.model";
 import { Vendor } from "../models/Vendor.model";
 import { Quote } from "../models/Quote.model";
 import { AgentRun } from "../models/AgentRun.model";
-import { runSSE } from "./tinyfish.service";
+import { runSSE, cancelRun } from "./tinyfish.service";
 import { buildGoal } from "./goal-builder.service";
 import { updateVendorStats } from "./vendor.service";
 import { broadcastToRFQ, notifyRFQUpdated } from "../config/socket";
@@ -100,12 +100,62 @@ export async function startRun(rfqId: string): Promise<IRFQ> {
 }
 
 /**
+ * Cancel all running agents for an RFQ, mark it failed.
+ */
+export async function cancelRFQRun(rfqId: string): Promise<void> {
+  const rfq = await RFQ.findById(rfqId);
+  if (!rfq) throw new NotFoundError("RFQ not found");
+  if (rfq.status !== "running") throw new BadRequestError("RFQ is not currently running");
+
+  const runs = await AgentRun.find({
+    rfqId,
+    status: { $in: ["queued", "started", "running"] },
+  });
+
+  await Promise.allSettled(
+    runs.map(async (run) => {
+      try {
+        if (run.tinyfishRunId) await cancelRun(run.tinyfishRunId);
+      } catch { /* ignore individual cancel errors */ }
+      run.status = "cancelled";
+      run.completedAt = new Date();
+      await run.save();
+    })
+  );
+
+  await Quote.updateMany(
+    { rfqId, status: { $in: ["pending", "running"] } },
+    { status: "failed", errorMessage: "Cancelled by user" }
+  );
+
+  await RFQ.findByIdAndUpdate(rfqId, { status: "failed" });
+
+  broadcastToRFQ(rfqId, {
+    rfqId,
+    vendorId: "",
+    vendorName: "System",
+    type: "ERROR",
+    data: { error: "Run cancelled by user" },
+    timestamp: new Date().toISOString(),
+  });
+  notifyRFQUpdated(rfqId);
+
+  logger.info(`RFQ ${rfqId} run cancelled by user`);
+}
+
+/**
  * Core execution — runs all vendor agents concurrently.
  * Call this fire-and-forget (do NOT await in route handler).
  */
 export async function executeRun(rfqId: string): Promise<void> {
   const rfq = await RFQ.findById(rfqId).lean<IRFQ>();
   if (!rfq) return;
+
+  // Clear any leftover quotes/runs from previous executions
+  await Promise.all([
+    Quote.deleteMany({ rfqId }),
+    AgentRun.deleteMany({ rfqId }),
+  ]);
 
   const vendors = await Vendor.find({
     _id: { $in: rfq.vendorIds },

@@ -2,13 +2,12 @@ import { Outlet } from "react-router-dom";
 import { useState, useEffect } from "react";
 import Sidebar from "./Sidebar";
 import ProfileSetupModal from "../common/ProfileSetupModal";
-import { useProfile } from "../../hooks/useProfile";
+import { useProfile } from "../../context/ProfileContext";
 
 export default function AppShell() {
   const { profile, saveProfile } = useProfile();
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // Show profile setup on first visit
   useEffect(() => {
     if (!profile) {
       const timer = setTimeout(() => setShowProfileModal(true), 800);
@@ -25,10 +24,7 @@ export default function AppShell() {
 
       {showProfileModal && !profile && (
         <ProfileSetupModal
-          onSave={(p) => {
-            saveProfile(p);
-            setShowProfileModal(false);
-          }}
+          onSave={(p) => { saveProfile(p); setShowProfileModal(false); }}
         />
       )}
     </div>

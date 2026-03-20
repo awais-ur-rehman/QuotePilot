@@ -1,12 +1,14 @@
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { useState, useRef, useEffect, memo } from "react";
+import toast from "react-hot-toast";
 import { useRFQ } from "../hooks/useRFQ";
 import { useAgentSocket } from "../hooks/useAgentSocket";
 import { rfqApi } from "../services/api";
 import Header from "../components/layout/Header";
 import StatusBadge from "../components/common/StatusBadge";
+import ConfirmDialog from "../components/common/ConfirmDialog";
 import { formatCurrency } from "../utils/formatters";
-import type { AgentStreamEvent, Quote, PopulatedVendorRef } from "../types";
-import { useState, useRef, useEffect, memo } from "react";
+import type { AgentStreamEvent, Quote, PopulatedVendorRef, RFQ } from "../types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -18,6 +20,99 @@ function getVendor(q: Quote): PopulatedVendorRef | null {
 function getVendorId(q: Quote): string {
   if (typeof q.vendorId === "object" && q.vendorId !== null) return q.vendorId._id;
   return q.vendorId as string;
+}
+
+// ─── RFQ Info Overlay ─────────────────────────────────────────────────────────
+
+function RFQInfoOverlay({ rfq, onClose }: { rfq: RFQ; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-[8px] border border-slate-200 w-full max-w-lg mx-4 overflow-hidden animate-fade-in"
+        style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.12)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">{rfq.title}</h3>
+            <p className="text-xs text-slate-400 font-mono mt-0.5">RFQ Specifications</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none ml-4">×</button>
+        </div>
+
+        <div className="px-5 py-5 grid grid-cols-2 gap-x-6 gap-y-4 border-b border-slate-100">
+          {[
+            { label: "Product Type", value: rfq.specs.productType },
+            { label: "Quantity", value: rfq.specs.quantity.toLocaleString() + " units" },
+            rfq.specs.dimensions && { label: "Dimensions", value: rfq.specs.dimensions },
+            rfq.specs.material && { label: "Material", value: rfq.specs.material },
+            rfq.specs.color && { label: "Color / Print", value: rfq.specs.color },
+          ]
+            .filter(Boolean)
+            .map((f) => {
+              const field = f as { label: string; value: string };
+              return (
+                <div key={field.label}>
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    {field.label}
+                  </span>
+                  <span className="text-sm text-slate-800">{field.value}</span>
+                </div>
+              );
+            })}
+
+          {rfq.description && (
+            <div className="col-span-2">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Notes</span>
+              <p className="text-sm text-slate-700 leading-relaxed">{rfq.description}</p>
+            </div>
+          )}
+
+          {rfq.specs.customFields && Object.keys(rfq.specs.customFields).length > 0 && (
+            Object.entries(rfq.specs.customFields).map(([k, v]) => (
+              <div key={k}>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">{k}</span>
+                <span className="text-sm text-slate-800 font-mono">{String(v)}</span>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-b border-slate-100">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Contact</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div>
+              <span className="text-xs text-slate-400">Company</span>
+              <div className="text-slate-800">{rfq.contactInfo.companyName}</div>
+            </div>
+            {rfq.contactInfo.contactName && (
+              <div>
+                <span className="text-xs text-slate-400">Contact</span>
+                <div className="text-slate-800">{rfq.contactInfo.contactName}</div>
+              </div>
+            )}
+            <div>
+              <span className="text-xs text-slate-400">Email</span>
+              <div className="text-slate-800 font-mono text-xs">{rfq.contactInfo.email}</div>
+            </div>
+            {rfq.contactInfo.phone && (
+              <div>
+                <span className="text-xs text-slate-400">Phone</span>
+                <div className="text-slate-800 font-mono text-xs">{rfq.contactInfo.phone}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-5 py-3 bg-slate-50 flex justify-end">
+          <button onClick={onClose} className="btn-secondary text-xs px-3 py-1.5">Close</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Quote Detail Overlay ─────────────────────────────────────────────────────
@@ -312,9 +407,11 @@ function QuoteTable({
 function VendorStrip({
   quotes,
   vendorStatuses,
+  streamingUrls,
 }: {
   quotes: Quote[];
   vendorStatuses: Map<string, AgentStreamEvent["type"]>;
+  streamingUrls: Map<string, string>;
 }) {
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -322,6 +419,7 @@ function VendorStrip({
         const vendor = getVendor(q);
         const vid = getVendorId(q);
         const liveStatus = vendorStatuses.get(vid);
+        const streamUrl = streamingUrls.get(vid);
         const isRunning = liveStatus === "PROGRESS" || liveStatus === "STARTED";
         const isComplete = liveStatus === "COMPLETE" || q.status === "completed";
         const isError = liveStatus === "ERROR" || q.status === "failed";
@@ -346,6 +444,17 @@ function VendorStrip({
               <span className="text-slate-400 font-mono text-[10px] ml-0.5">
                 {formatCurrency(q.unitPrice, q.currency)}/unit
               </span>
+            )}
+            {streamUrl && isRunning && (
+              <a
+                href={streamUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-1 text-[10px] text-blue-500 hover:text-blue-700 font-medium"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Watch →
+              </a>
             )}
           </div>
         );
@@ -449,16 +558,58 @@ function TerminalPanel({
 
 export default function RFQDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { rfq, loading, error, refetch } = useRFQ(id ?? null);
-  const { events, vendorStatuses, connected } = useAgentSocket(id ?? null);
+  const { events, vendorStatuses, streamingUrls, connected } = useAgentSocket(id ?? null);
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [runLoading, setRunLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const quotes: Quote[] = ((rfq as unknown as { quotes?: Quote[] })?.quotes ?? []);
 
   const handleRun = async () => {
     if (!id) return;
-    await rfqApi.run(id);
-    refetch();
+    setRunLoading(true);
+    try {
+      await rfqApi.run(id);
+      refetch();
+      toast.success("Agents launched!");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to launch agents");
+    } finally {
+      setRunLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!id) return;
+    setCancelLoading(true);
+    try {
+      await rfqApi.cancel(id);
+      refetch();
+      toast.success("Run cancelled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel");
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!id) return;
+    setDeleteLoading(true);
+    try {
+      await rfqApi.delete(id);
+      toast.success("RFQ deleted");
+      navigate("/");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+      setDeleteLoading(false);
+      setShowDeleteConfirm(false);
+    }
   };
 
   if (loading && !rfq) {
@@ -474,6 +625,7 @@ export default function RFQDetailPage() {
       <div className="flex items-center justify-center h-full">
         <div className="bg-red-50 border border-red-200 rounded-[6px] p-6 text-center">
           <p className="text-sm text-red-700">{error ?? "RFQ not found"}</p>
+          <Link to="/" className="text-xs text-teal-600 hover:underline mt-3 block">← Back to Dashboard</Link>
         </div>
       </div>
     );
@@ -486,6 +638,18 @@ export default function RFQDetailPage() {
         subtitle={`${rfq.specs.productType} · qty ${rfq.specs.quantity.toLocaleString()}`}
         actions={
           <div className="flex items-center gap-2">
+            <Link to="/" className="text-xs text-slate-400 hover:text-slate-600 font-medium transition-colors mr-1">
+              ← Requests
+            </Link>
+
+            <button
+              onClick={() => setShowInfo(true)}
+              className="btn-ghost text-xs px-2.5 py-1.5"
+              title="View RFQ specs"
+            >
+              Info
+            </button>
+
             {connected && rfq.status === "running" && (
               <span className="inline-flex items-center gap-1 text-xs text-teal-700 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse-dot" />
@@ -493,16 +657,41 @@ export default function RFQDetailPage() {
               </span>
             )}
             <StatusBadge status={rfq.status} />
+
+            {rfq.status === "running" && (
+              <button
+                onClick={handleCancel}
+                disabled={cancelLoading}
+                className="text-xs px-3 py-1.5 rounded-[6px] font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50"
+              >
+                {cancelLoading ? "Cancelling…" : "Cancel Run"}
+              </button>
+            )}
             {rfq.status === "draft" && (
-              <button onClick={handleRun} className="btn-primary text-xs px-3 py-1.5">
-                Launch Agents →
+              <button
+                onClick={handleRun}
+                disabled={runLoading}
+                className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
+              >
+                {runLoading ? "Launching…" : "Launch Agents →"}
               </button>
             )}
-            {rfq.status === "completed" && (
-              <button onClick={handleRun} className="btn-secondary text-xs px-3 py-1.5">
-                Re-run
+            {(rfq.status === "completed" || rfq.status === "failed") && (
+              <button
+                onClick={handleRun}
+                disabled={runLoading}
+                className="btn-secondary text-xs px-3 py-1.5 disabled:opacity-50"
+              >
+                {runLoading ? "Re-running…" : "Re-run"}
               </button>
             )}
+
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="btn-ghost text-xs px-2.5 py-1.5 text-red-500 hover:bg-red-50 hover:text-red-600"
+            >
+              Delete
+            </button>
           </div>
         }
       />
@@ -510,7 +699,7 @@ export default function RFQDetailPage() {
       {/* Vendor status strip */}
       {quotes.length > 0 && (
         <div className="px-5 py-3 border-b border-slate-200 bg-white">
-          <VendorStrip quotes={quotes} vendorStatuses={vendorStatuses} />
+          <VendorStrip quotes={quotes} vendorStatuses={vendorStatuses} streamingUrls={streamingUrls} />
         </div>
       )}
 
@@ -536,11 +725,26 @@ export default function RFQDetailPage() {
         </div>
       </div>
 
-      {/* Quote detail overlay */}
+      {/* Overlays */}
       {selectedQuote && (
         <QuoteDetailOverlay
           quote={selectedQuote}
           onClose={() => setSelectedQuote(null)}
+        />
+      )}
+
+      {showInfo && (
+        <RFQInfoOverlay rfq={rfq} onClose={() => setShowInfo(false)} />
+      )}
+
+      {showDeleteConfirm && (
+        <ConfirmDialog
+          title="Delete RFQ"
+          message="This will permanently delete this RFQ and all its quotes. This cannot be undone."
+          confirmLabel={deleteLoading ? "Deleting…" : "Delete"}
+          danger
+          onConfirm={handleDelete}
+          onCancel={() => setShowDeleteConfirm(false)}
         />
       )}
     </div>

@@ -31,6 +31,9 @@ export const rfqApi = {
   run: (id: string) =>
     req<{ rfqId: string; status: string }>(`/rfq/${id}/run`, { method: "POST" }),
 
+  cancel: (id: string) =>
+    req<null>(`/rfq/${id}/cancel`, { method: "POST" }),
+
   delete: (id: string) => req<null>(`/rfq/${id}`, { method: "DELETE" }),
 };
 

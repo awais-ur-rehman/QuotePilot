@@ -1,21 +1,20 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-
-// Pages — to be built Day 3
-const DashboardPage = () => (
-  <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-    <div className="text-center">
-      <h1 className="text-3xl font-bold text-teal-400 font-mono mb-2">QuotePilot</h1>
-      <p className="text-slate-400">Autonomous Multi-Vendor RFQ Agent</p>
-      <p className="text-slate-600 text-sm mt-4 font-mono">Backend foundation ready. Day 3: UI coming soon.</p>
-    </div>
-  </div>
-);
+import AppShell from "./components/layout/AppShell";
+import DashboardPage from "./pages/DashboardPage";
+import NewRFQPage from "./pages/NewRFQPage";
+import RFQDetailPage from "./pages/RFQDetailPage";
+import VendorsPage from "./pages/VendorsPage";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<DashboardPage />} />
+        <Route element={<AppShell />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/rfq/new" element={<NewRFQPage />} />
+          <Route path="/rfq/:id" element={<RFQDetailPage />} />
+          <Route path="/vendors" element={<VendorsPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

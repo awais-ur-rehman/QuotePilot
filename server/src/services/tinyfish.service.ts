@@ -49,7 +49,7 @@ export async function* runSSE(
       const events = parseSSEChunk(text);
 
       for (const event of events) {
-        logger.debug("TinyFish SSE event", { type: event.type });
+        logger.debug("TinyFish SSE event", event);
         yield event;
 
         // Stop reading after COMPLETE

@@ -37,3 +37,6 @@ Thumbs.db
 .agent/
 .agents/
 QUOTEPILOT.md
+
+# Design & planning docs (local reference only)
+planning/

@@ -6,7 +6,7 @@ export interface CreateVendorDTO {
   name: string;
   website: string;
   quoteUrl: string;
-  category?: string;
+  tags?: string[];
   formInstructions?: string;
   browserProfile?: BrowserProfile;
 }
@@ -17,8 +17,8 @@ export interface UpdateVendorDTO extends Partial<CreateVendorDTO> {
   avgSteps?: number;
 }
 
-export async function listVendors(category?: string): Promise<IVendor[]> {
-  const filter = category ? { category, isActive: true } : { isActive: true };
+export async function listVendors(tag?: string): Promise<IVendor[]> {
+  const filter = tag ? { tags: tag, isActive: true } : { isActive: true };
   return Vendor.find(filter).sort({ name: 1 }).lean<IVendor[]>();
 }
 

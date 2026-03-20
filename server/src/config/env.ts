@@ -8,6 +8,12 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
   TINYFISH_API_KEY: z.string().min(1, "TINYFISH_API_KEY is required"),
+  // Optional SMTP — if not set, email notifications are skipped silently
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().optional().transform((v) => (v ? Number(v) : 587)),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional().default("noreply@quotepilot.ai"),
 });
 
 const parsed = envSchema.safeParse(process.env);

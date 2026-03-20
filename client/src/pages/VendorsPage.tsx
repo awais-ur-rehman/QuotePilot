@@ -21,16 +21,25 @@ function VendorPanel({
     name: vendor?.name ?? "",
     website: vendor?.website ?? "",
     quoteUrl: vendor?.quoteUrl ?? "",
-    category: vendor?.category ?? "general",
     formInstructions: vendor?.formInstructions ?? "",
     browserProfile: vendor?.browserProfile ?? "lite",
   });
+  const [tagInput, setTagInput] = useState("");
+  const [tags, setTags] = useState<string[]>(vendor?.tags ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const set = (k: keyof typeof form) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const addTag = (raw: string) => {
+    const tag = raw.trim().toLowerCase();
+    if (tag && !tags.includes(tag)) setTags((t) => [...t, tag]);
+    setTagInput("");
+  };
+
+  const removeTag = (tag: string) => setTags((t) => t.filter((x) => x !== tag));
 
   const handleSave = async () => {
     if (!form.name || !form.quoteUrl) {
@@ -41,10 +50,10 @@ function VendorPanel({
     setError(null);
     try {
       if (vendor) {
-        await vendorApi.update(vendor._id, form as Partial<Vendor>);
+        await vendorApi.update(vendor._id, { ...form, tags } as Partial<Vendor>);
         toast.success("Vendor updated");
       } else {
-        await vendorApi.create({ ...form, isActive: true } as Omit<Vendor, "_id" | "reliability" | "avgSteps" | "createdAt" | "updatedAt">);
+        await vendorApi.create({ ...form, tags, isActive: true } as Omit<Vendor, "_id" | "reliability" | "avgSteps" | "createdAt" | "updatedAt">);
         toast.success("Vendor added");
       }
       onSave();
@@ -75,15 +84,30 @@ function VendorPanel({
 
         {/* Panel body */}
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Name *</label>
-              <input className="input" value={form.name} onChange={set("name")} placeholder="Vendor Co." />
+          <div>
+            <label className="label">Name *</label>
+            <input className="input" value={form.name} onChange={set("name")} placeholder="Vendor Co." />
+          </div>
+
+          <div>
+            <label className="label">Tags</label>
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {tags.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 rounded font-mono">
+                  {t}
+                  <button type="button" onClick={() => removeTag(t)} className="text-teal-400 hover:text-teal-700 leading-none">×</button>
+                </span>
+              ))}
             </div>
-            <div>
-              <label className="label">Category</label>
-              <input className="input" value={form.category} onChange={set("category")} placeholder="packaging" />
-            </div>
+            <input
+              className="input text-xs"
+              placeholder="Type a tag and press Enter (e.g. packaging)"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagInput); }}}
+              onBlur={() => tagInput.trim() && addTag(tagInput)}
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Press Enter or comma to add a tag.</p>
           </div>
 
           <div>
@@ -171,8 +195,12 @@ function VendorRow({
         </a>
       </div>
 
-      {/* Category */}
-      <div className="w-28 text-xs text-slate-500 truncate">{vendor.category}</div>
+      {/* Tags */}
+      <div className="w-28 flex flex-wrap gap-1">
+        {(vendor.tags ?? []).slice(0, 2).map((t) => (
+          <span key={t} className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-mono">{t}</span>
+        ))}
+      </div>
 
       {/* Reliability */}
       <div className="w-20 flex items-center gap-1.5">

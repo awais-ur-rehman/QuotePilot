@@ -9,7 +9,7 @@ const createVendorSchema = z.object({
   name: z.string().min(1).max(200),
   website: z.string().url(),
   quoteUrl: z.string().url(),
-  category: z.string().optional().default("general"),
+  tags: z.array(z.string()).optional().default([]),
   formInstructions: z.string().optional().default(""),
   browserProfile: z.enum(["lite", "stealth"]).optional().default("lite"),
 });
@@ -21,8 +21,8 @@ const updateVendorSchema = createVendorSchema
 // ─── Controllers ──────────────────────────────────────────────────────────────
 
 export const listVendors = asyncHandler(async (req: Request, res: Response) => {
-  const category = req.query.category as string | undefined;
-  const vendors = await vendorService.listVendors(category);
+  const tag = req.query.tag as string | undefined;
+  const vendors = await vendorService.listVendors(tag);
   res.json({ status: "success", data: vendors });
 });
 

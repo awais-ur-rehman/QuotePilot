@@ -13,6 +13,7 @@ import { logger } from "./utils/logger";
 import rfqRoutes from "./routes/rfq.routes";
 import vendorRoutes from "./routes/vendor.routes";
 import agentRoutes from "./routes/agent.routes";
+import analyticsRoutes from "./routes/analytics.routes";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -39,6 +40,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/rfq", rfqRoutes);
 app.use("/api/vendors", vendorRoutes);
 app.use("/api/agent", agentRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 // ─── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {

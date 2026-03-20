@@ -23,10 +23,12 @@ const rfqSchema = new Schema<IRFQDocument>(
     },
     status: {
       type: String,
-      enum: ["draft", "running", "completed", "failed"],
+      enum: ["draft", "running", "completed", "failed", "cancelled", "awarded"],
       default: "draft",
     },
     vendorIds: [{ type: Types.ObjectId, ref: "Vendor" }],
+    awardedVendorId: { type: Types.ObjectId, ref: "Vendor" },
+    awardNotes: { type: String },
   },
   { timestamps: true }
 );

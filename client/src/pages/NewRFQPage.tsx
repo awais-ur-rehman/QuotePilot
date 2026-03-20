@@ -3,7 +3,9 @@ import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { rfqApi, vendorApi } from "../services/api";
 import Header from "../components/layout/Header";
+import VendorPicker from "../components/vendors/VendorPicker";
 import { useProfile } from "../hooks/useProfile";
+import { useTemplates } from "../hooks/useTemplates";
 import type { Vendor } from "../types";
 
 interface CustomField { key: string; value: string }
@@ -11,6 +13,7 @@ interface CustomField { key: string; value: string }
 export default function NewRFQPage() {
   const navigate = useNavigate();
   const { profile } = useProfile();
+  const { templates } = useTemplates();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [selectedVendors, setSelectedVendors] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +35,6 @@ export default function NewRFQPage() {
     phone: profile?.phone ?? "",
   });
 
-  // Sync contact fields from profile when profile loads
   useEffect(() => {
     if (profile && !editingContact) {
       setForm((f) => ({
@@ -51,13 +53,6 @@ export default function NewRFQPage() {
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const toggleVendor = (id: string) =>
-    setSelectedVendors((s) => {
-      const next = new Set(s);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
 
   const addCustomField = () => setCustomFields((f) => [...f, { key: "", value: "" }]);
   const updateCustomField = (i: number, field: "key" | "value", val: string) =>
@@ -119,17 +114,36 @@ export default function NewRFQPage() {
     }
   };
 
+  const loadTemplate = (templateId: string) => {
+    const t = templates.find((t) => t.id === templateId);
+    if (!t) return;
+    setForm((f) => ({
+      ...f,
+      productType: t.specs.productType,
+      quantity: String(t.specs.quantity),
+      dimensions: t.specs.dimensions ?? "",
+      material: t.specs.material ?? "",
+      color: t.specs.color ?? "",
+      description: t.description ?? "",
+    }));
+    if (t.specs.customFields) {
+      setCustomFields(Object.entries(t.specs.customFields).map(([key, value]) => ({ key, value })));
+    }
+    toast.success(`Template "${t.name}" loaded`);
+  };
+
   const hasProfile = !!profile;
   const contactLocked = hasProfile && !editingContact;
+  const estCost = ((selectedVendors.size * 12) * 0.013).toFixed(2);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Header
-        title="New RFQ"
+        title="New Request"
         subtitle="Configure and launch vendor agents"
         actions={
-          <Link to="/" className="text-xs text-slate-500 hover:text-slate-700 font-medium transition-colors">
-            ← Back
+          <Link to="/rfqs" className="text-xs text-slate-400 hover:text-slate-600 font-medium transition-colors">
+            ← Requests
           </Link>
         }
       />
@@ -140,10 +154,22 @@ export default function NewRFQPage() {
 
             {/* LEFT: Product Specs */}
             <div className="space-y-5">
-              <div className="border-b border-slate-200 pb-2">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                 <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Product Specifications
                 </h2>
+                {templates.length > 0 && (
+                  <select
+                    className="text-xs border border-slate-200 rounded-[6px] px-2 py-1 text-slate-600 bg-white hover:border-slate-300 transition-colors"
+                    defaultValue=""
+                    onChange={(e) => { if (e.target.value) loadTemplate(e.target.value); e.target.value = ""; }}
+                  >
+                    <option value="" disabled>Load template…</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -211,7 +237,7 @@ export default function NewRFQPage() {
               </div>
             </div>
 
-            {/* RIGHT: Contact + Vendors */}
+            {/* RIGHT: Contact + Vendors + Actions */}
             <div className="space-y-5">
               {/* Contact info */}
               <div className="flex items-center justify-between border-b border-slate-200 pb-2">
@@ -271,48 +297,17 @@ export default function NewRFQPage() {
                   </h2>
                 </div>
 
-                {vendors.length === 0 && (
-                  <p className="text-sm text-slate-500">
-                    No vendors available.{" "}
-                    <Link to="/vendors" className="text-teal-600 hover:underline">Add vendors →</Link>
+                <VendorPicker
+                  vendors={vendors}
+                  selected={selectedVendors}
+                  onChange={setSelectedVendors}
+                />
+
+                {selectedVendors.size === 1 && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    ⚠ Quoting from one vendor doesn't allow comparison. Select more for competitive pricing.
                   </p>
                 )}
-
-                <div className="space-y-1.5">
-                  {vendors.map((v) => {
-                    const selected = selectedVendors.has(v._id);
-                    return (
-                      <button
-                        key={v._id}
-                        type="button"
-                        onClick={() => toggleVendor(v._id)}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-[6px] border text-left transition-all ${
-                          selected
-                            ? "bg-teal-50 border-teal-300 text-teal-800"
-                            : "bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${selected ? "bg-teal-600" : "bg-slate-300"}`} />
-                          <div>
-                            <div className="text-sm font-medium">{v.name}</div>
-                            <div className="text-xs text-slate-400 font-mono">{v.category}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                            v.browserProfile === "stealth"
-                              ? "bg-amber-50 text-amber-700 border border-amber-200"
-                              : "bg-slate-100 text-slate-500"
-                          }`}>
-                            {v.browserProfile}
-                          </span>
-                          <span>{v.reliability}%</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
 
               {error && (
@@ -324,23 +319,23 @@ export default function NewRFQPage() {
               {/* Actions */}
               <div className="flex gap-3 pt-1">
                 <button
-                  disabled={submitting}
+                  disabled={submitting || vendors.length === 0}
                   onClick={() => handleSubmit(true)}
-                  className="btn-primary flex-1"
+                  className="btn-primary flex-1 disabled:opacity-50"
                 >
                   {submitting ? "Launching…" : "Launch Agents →"}
                 </button>
                 <button
-                  disabled={submitting}
+                  disabled={submitting || vendors.length === 0}
                   onClick={() => handleSubmit(false)}
-                  className="btn-secondary px-4"
+                  className="btn-secondary px-4 disabled:opacity-50"
                 >
                   Save Draft
                 </button>
               </div>
 
               <p className="text-xs text-slate-400 font-mono">
-                Est. cost ~${((selectedVendors.size * 12) * 0.013).toFixed(2)} for {selectedVendors.size} vendor{selectedVendors.size !== 1 ? "s" : ""}
+                Est. ~${estCost} API cost for {selectedVendors.size} vendor{selectedVendors.size !== 1 ? "s" : ""} (~12 steps each)
               </p>
             </div>
           </div>

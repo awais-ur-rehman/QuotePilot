@@ -1,6 +1,6 @@
 // Shared frontend types — mirrored from server interfaces
 
-export type RFQStatus = "draft" | "running" | "completed" | "failed";
+export type RFQStatus = "draft" | "running" | "completed" | "failed" | "cancelled" | "awarded";
 export type QuoteStatus = "pending" | "running" | "completed" | "failed" | "no_quote";
 export type AgentRunStatus = "queued" | "started" | "running" | "completed" | "failed" | "cancelled";
 
@@ -9,7 +9,7 @@ export interface Vendor {
   name: string;
   website: string;
   quoteUrl: string;
-  category: string;
+  tags: string[];
   formInstructions: string;
   browserProfile: "lite" | "stealth";
   isActive: boolean;
@@ -43,9 +43,35 @@ export interface RFQ {
   contactInfo: ContactInfo;
   status: RFQStatus;
   vendorIds: string[];
+  awardedVendorId?: string;
+  awardNotes?: string;
   createdAt: string;
   updatedAt: string;
   quotes?: Quote[];
+}
+
+// Analytics types
+export interface VendorStat {
+  vendorId: string;
+  vendorName: string;
+  total: number;
+  completed: number;
+  successRate: number;
+  avgUnitPrice: number | null;
+  minUnitPrice: number | null;
+  avgSteps: number | null;
+}
+
+export interface AnalyticsData {
+  summary: {
+    totalRFQs: number;
+    totalQuotes: number;
+    completedQuotes: number;
+    successRate: number;
+    hoursSaved: number;
+  };
+  vendorStats: VendorStat[];
+  recentRFQs: RFQ[];
 }
 
 // Mongoose populates vendorId in-place → it becomes an object after the API call
@@ -53,7 +79,24 @@ export interface PopulatedVendorRef {
   _id: string;
   name: string;
   website: string;
-  category: string;
+  tags: string[];
+}
+
+// ─── RFQ Templates (localStorage) ────────────────────────────────────────────
+
+export interface RFQTemplate {
+  id: string;
+  name: string;
+  createdAt: string;
+  specs: {
+    productType: string;
+    quantity: number;
+    dimensions?: string;
+    material?: string;
+    color?: string;
+    customFields?: Record<string, string>;
+  };
+  description?: string;
 }
 
 export interface Quote {

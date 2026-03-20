@@ -28,11 +28,17 @@ export const rfqApi = {
   create: (body: Omit<RFQ, "_id" | "status" | "createdAt" | "updatedAt" | "quotes">) =>
     req<RFQ>("/rfq", { method: "POST", body: JSON.stringify(body) }),
 
-  run: (id: string) =>
-    req<{ rfqId: string; status: string }>(`/rfq/${id}/run`, { method: "POST" }),
+  run: (id: string, vendorIds?: string[]) =>
+    req<{ rfqId: string; status: string }>(`/rfq/${id}/run`, {
+      method: "POST",
+      body: JSON.stringify(vendorIds ? { vendorIds } : {}),
+    }),
 
   cancel: (id: string) =>
     req<null>(`/rfq/${id}/cancel`, { method: "POST" }),
+
+  award: (id: string, awardedVendorId: string, awardNotes?: string) =>
+    req<null>(`/rfq/${id}/award`, { method: "PATCH", body: JSON.stringify({ awardedVendorId, awardNotes }) }),
 
   delete: (id: string) => req<null>(`/rfq/${id}`, { method: "DELETE" }),
 };
@@ -40,8 +46,8 @@ export const rfqApi = {
 // ─── Vendors ──────────────────────────────────────────────────────────────────
 
 export const vendorApi = {
-  list: (category?: string) =>
-    req<Vendor[]>(`/vendors${category ? `?category=${category}` : ""}`),
+  list: (tag?: string) =>
+    req<Vendor[]>(`/vendors${tag ? `?tag=${tag}` : ""}`),
 
   get: (id: string) => req<Vendor>(`/vendors/${id}`),
 
@@ -60,6 +66,14 @@ export const agentApi = {
   getRuns: (rfqId: string) => req<AgentRun[]>(`/agent/runs/${rfqId}`),
   cancel: (runId: string) =>
     req<null>(`/agent/cancel/${runId}`, { method: "POST" }),
+};
+
+// ─── Analytics ────────────────────────────────────────────────────────────────
+
+import type { AnalyticsData } from "../types";
+
+export const analyticsApi = {
+  get: () => req<AnalyticsData>("/analytics"),
 };
 
 // Keep Quote type used in type signatures

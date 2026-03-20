@@ -53,10 +53,14 @@ export const createRFQ = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const runRFQ = asyncHandler(async (req: Request, res: Response) => {
-  const rfq = await rfqService.startRun(req.params.id);
+  const { vendorIds } = z.object({
+    vendorIds: z.array(z.string()).optional(),
+  }).parse(req.body ?? {});
+
+  const rfq = await rfqService.startRun(req.params.id, vendorIds);
 
   // Fire agents in background — do NOT await
-  rfqService.executeRun(rfq._id.toString()).catch((err) => {
+  rfqService.executeRun(rfq._id.toString(), vendorIds).catch((err) => {
     logger.error("Background RFQ run failed", { rfqId: rfq._id, error: err.message });
   });
 
@@ -75,4 +79,12 @@ export const deleteRFQ = asyncHandler(async (req: Request, res: Response) => {
 export const cancelRFQ = asyncHandler(async (req: Request, res: Response) => {
   await rfqService.cancelRFQRun(req.params.id);
   res.json({ status: "success", message: "Run cancelled" });
+});
+
+export const awardRFQ = asyncHandler(async (req: Request, res: Response) => {
+  const { awardedVendorId, awardNotes } = z
+    .object({ awardedVendorId: z.string().min(1), awardNotes: z.string().optional() })
+    .parse(req.body);
+  const rfq = await rfqService.awardRFQ(req.params.id, awardedVendorId, awardNotes);
+  res.json({ status: "success", data: rfq });
 });

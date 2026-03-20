@@ -7,6 +7,7 @@ import { runSSE, cancelRun } from "./tinyfish.service";
 import { buildGoal } from "./goal-builder.service";
 import { updateVendorStats } from "./vendor.service";
 import { broadcastToRFQ, notifyRFQUpdated } from "../config/socket";
+import { sendCompletionEmail } from "./email.service";
 import { NotFoundError, BadRequestError } from "../utils/errors";
 import { logger } from "../utils/logger";
 import type { IRFQ, IVendor, ExtractedQuote, AgentStreamEvent } from "../types";
@@ -48,7 +49,7 @@ export async function getRFQById(id: string): Promise<IRFQ & { quotes: unknown[]
   if (!rfq) throw new NotFoundError("RFQ not found");
 
   const quotes = await Quote.find({ rfqId: id })
-    .populate("vendorId", "name website category")
+    .populate("vendorId", "name website tags")
     .lean();
 
   return { ...rfq, quotes };
@@ -71,6 +72,25 @@ export async function createRFQ(data: CreateRFQDTO): Promise<IRFQ> {
   return rfq.toObject() as IRFQ;
 }
 
+export async function awardRFQ(
+  id: string,
+  awardedVendorId: string,
+  awardNotes?: string
+): Promise<IRFQ> {
+  const rfq = await RFQ.findById(id).lean<IRFQ>();
+  if (!rfq) throw new NotFoundError("RFQ not found");
+  if (rfq.status !== "completed" && rfq.status !== "awarded") {
+    throw new BadRequestError("Can only award a completed or already-awarded RFQ");
+  }
+  const updated = await RFQ.findByIdAndUpdate(
+    id,
+    { status: "awarded", awardedVendorId: new Types.ObjectId(awardedVendorId), awardNotes },
+    { new: true }
+  ).lean<IRFQ>();
+  notifyRFQUpdated(id);
+  return updated!;
+}
+
 export async function deleteRFQ(id: string): Promise<void> {
   const rfq = await RFQ.findById(id);
   if (!rfq) throw new NotFoundError("RFQ not found");
@@ -85,7 +105,7 @@ export async function deleteRFQ(id: string): Promise<void> {
 }
 
 /** Validates and marks RFQ as starting. Returns the RFQ. */
-export async function startRun(rfqId: string): Promise<IRFQ> {
+export async function startRun(rfqId: string, vendorIds?: string[]): Promise<IRFQ> {
   const rfq = await RFQ.findById(rfqId).lean<IRFQ>();
   if (!rfq) throw new NotFoundError("RFQ not found");
   if (rfq.status === "running") {
@@ -93,6 +113,12 @@ export async function startRun(rfqId: string): Promise<IRFQ> {
   }
   if (!rfq.vendorIds || rfq.vendorIds.length === 0) {
     throw new BadRequestError("RFQ has no vendors selected");
+  }
+
+  if (vendorIds && vendorIds.length > 0) {
+    const rfqVendorIdStrings = rfq.vendorIds.map((id) => id.toString());
+    const allValid = vendorIds.every((vid) => rfqVendorIdStrings.includes(vid));
+    if (!allValid) throw new BadRequestError("Some vendor IDs are not part of this RFQ");
   }
 
   await RFQ.findByIdAndUpdate(rfqId, { status: "running" });
@@ -144,23 +170,34 @@ export async function cancelRFQRun(rfqId: string): Promise<void> {
 }
 
 /**
- * Core execution — runs all vendor agents concurrently.
+ * Core execution — runs vendor agents concurrently.
+ * Pass vendorIds to re-run only specific vendors (re-run-failed flow).
  * Call this fire-and-forget (do NOT await in route handler).
  */
-export async function executeRun(rfqId: string): Promise<void> {
+export async function executeRun(rfqId: string, vendorIds?: string[]): Promise<void> {
   const rfq = await RFQ.findById(rfqId).lean<IRFQ>();
   if (!rfq) return;
 
-  // Clear any leftover quotes/runs from previous executions
-  await Promise.all([
-    Quote.deleteMany({ rfqId }),
-    AgentRun.deleteMany({ rfqId }),
-  ]);
+  if (vendorIds && vendorIds.length > 0) {
+    // Partial re-run: only clear quotes/runs for the specified vendors
+    const vendorObjectIds = vendorIds.map((id) => new Types.ObjectId(id));
+    await Promise.all([
+      Quote.deleteMany({ rfqId, vendorId: { $in: vendorObjectIds } }),
+      AgentRun.deleteMany({ rfqId, vendorId: { $in: vendorObjectIds } }),
+    ]);
+  } else {
+    // Full run: clear everything
+    await Promise.all([
+      Quote.deleteMany({ rfqId }),
+      AgentRun.deleteMany({ rfqId }),
+    ]);
+  }
 
-  const vendors = await Vendor.find({
-    _id: { $in: rfq.vendorIds },
-    isActive: true,
-  }).lean<IVendor[]>();
+  const vendorFilter = vendorIds && vendorIds.length > 0
+    ? { _id: { $in: vendorIds }, isActive: true }
+    : { _id: { $in: rfq.vendorIds }, isActive: true };
+
+  const vendors = await Vendor.find(vendorFilter).lean<IVendor[]>();
 
   if (vendors.length === 0) {
     await RFQ.findByIdAndUpdate(rfqId, { status: "failed" });
@@ -226,14 +263,24 @@ export async function executeRun(rfqId: string): Promise<void> {
   await RFQ.findByIdAndUpdate(rfqId, { status: finalStatus });
   notifyRFQUpdated(rfqId);
 
+  const completedCount = finalQuotes.filter((q) => q.status === "completed").length;
+
   broadcastToRFQ(rfqId, {
     rfqId,
     vendorId: "",
     vendorName: "System",
     type: "COMPLETE",
-    data: { status: finalStatus, quotesCollected: finalQuotes.filter((q) => q.status === "completed").length },
+    data: { status: finalStatus, quotesCollected: completedCount },
     timestamp: new Date().toISOString(),
   });
+
+  // Send completion email (no-op if SMTP not configured)
+  const fullRfq = await RFQ.findById(rfqId).lean<IRFQ>();
+  if (fullRfq) {
+    sendCompletionEmail(fullRfq, completedCount, finalQuotes.length).catch((err) => {
+      logger.warn("Email notification failed", { error: err.message });
+    });
+  }
 
   logger.info(`RFQ ${rfqId} run completed. Status: ${finalStatus}`);
 }

@@ -52,7 +52,7 @@ export interface AgentStreamEvent {
 
 // ─── Model interfaces ─────────────────────────────────────────────────────────
 
-export type RFQStatus = "draft" | "running" | "completed" | "failed";
+export type RFQStatus = "draft" | "running" | "completed" | "failed" | "cancelled" | "awarded";
 export type QuoteStatus = "pending" | "running" | "completed" | "failed" | "no_quote";
 export type AgentRunStatus = "queued" | "started" | "running" | "completed" | "failed" | "cancelled";
 
@@ -61,7 +61,7 @@ export interface IVendor {
   name: string;
   website: string;
   quoteUrl: string;
-  category: string;
+  tags: string[];
   formInstructions: string;
   browserProfile: BrowserProfile;
   isActive: boolean;
@@ -91,6 +91,8 @@ export interface IRFQ {
   };
   status: RFQStatus;
   vendorIds: Types.ObjectId[];
+  awardedVendorId?: Types.ObjectId;
+  awardNotes?: string;
   createdAt: Date;
   updatedAt: Date;
 }

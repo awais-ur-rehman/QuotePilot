@@ -14,11 +14,32 @@ const vendorSchema = new Schema<IVendorDocument>(
     isActive: { type: Boolean, default: true },
     reliability: { type: Number, min: 0, max: 100, default: 100 },
     avgSteps: { type: Number, default: 0 },
+    discoveredFrom: { type: String },
+    discoveredAt: { type: Date },
+    trustScore: { type: Number, min: 0, max: 100 },
+    trustData: {
+      bbbRating: { type: String },
+      bbbAccredited: { type: Boolean },
+      bbbComplaints: { type: Number },
+      trustpilotScore: { type: Number },
+      trustpilotReviews: { type: Number },
+      googleRating: { type: Number },
+      googleReviews: { type: Number },
+      yearsInBusiness: { type: Number },
+      lastChecked: { type: Date },
+    },
+    trustStatus: {
+      type: String,
+      enum: ["pending", "checking", "scored", "failed"],
+      default: "pending",
+    },
   },
   { timestamps: true }
 );
 
 vendorSchema.index({ tags: 1, isActive: 1 });
 vendorSchema.index({ name: "text" });
+vendorSchema.index({ trustStatus: 1 });
+vendorSchema.index({ discoveredFrom: 1 });
 
 export const Vendor = model<IVendorDocument>("Vendor", vendorSchema);

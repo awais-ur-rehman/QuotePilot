@@ -154,14 +154,27 @@ function exportQuotesCSV(rfqTitle: string, quotes: Quote[]) {
 function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
   rfq: RFQ; quotes: Quote[]; onSelectQuote: (q: Quote) => void; onRerunFailed: (ids: string[]) => void;
 }) {
-  const [sortKey, setSortKey] = useState<"unitPrice" | "price">("unitPrice");
+  const [sortKey, setSortKey] = useState<"unitPrice" | "totalLandedCost" | "price">("totalLandedCost");
   const [awardVendorId, setAwardVendorId] = useState<string | null>(null);
   const [awardNotes, setAwardNotes] = useState("");
   const [awarding, setAwarding] = useState(false);
 
-  const sorted = [...quotes].sort((a, b) => (a[sortKey] ?? Infinity) - (b[sortKey] ?? Infinity));
+  const hasShipping = quotes.some((q) => q.shipping?.cheapestRate != null);
+  const hasBenchmark = quotes.some((q) => q.marketBenchmark?.avgMarketPrice != null);
+
+  const effectiveSortKey = sortKey === "totalLandedCost" && !hasShipping ? "unitPrice" : sortKey;
+  const sorted = [...quotes].sort((a, b) => {
+    const av = (a as any)[effectiveSortKey] ?? Infinity;
+    const bv = (b as any)[effectiveSortKey] ?? Infinity;
+    return av - bv;
+  });
   const completedPrices = quotes.filter((q) => q.status === "completed" && q.unitPrice !== undefined).map((q) => q.unitPrice!);
+  const landedCosts = quotes.filter((q) => q.status === "completed" && q.totalLandedCost != null).map((q) => q.totalLandedCost!);
   const bestUnitPrice = completedPrices.length > 0 ? Math.min(...completedPrices) : Infinity;
+  const bestLandedCost = landedCosts.length > 0 ? Math.min(...landedCosts) : Infinity;
+  const isBestRow = (q: Quote) => q.status === "completed" && (
+    hasShipping ? q.totalLandedCost === bestLandedCost : q.unitPrice === bestUnitPrice
+  );
   const isClickable = (q: Quote) => q.status === "completed" || q.status === "failed" || q.status === "no_quote";
   const completedQuotes = quotes.filter((q) => q.status === "completed");
   const failedQuotes = quotes.filter((q) => q.status === "failed" || q.status === "no_quote");
@@ -198,10 +211,14 @@ function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
       {/* Sort pills + actions */}
       <div className="flex items-center gap-1.5 px-5 pb-3">
         <span className="text-xs text-slate-400 mr-1">Sort:</span>
-        {(["unitPrice", "price"] as const).map((k) => (
+        {([
+          ["unitPrice", "Unit Price"],
+          ["totalLandedCost", "Landed Cost"],
+          ["price", "Total"],
+        ] as const).map(([k, label]) => (
           <button key={k} onClick={() => setSortKey(k)}
             className={`text-xs px-2.5 py-0.5 rounded font-medium transition-colors ${sortKey === k ? "bg-teal-50 text-teal-700 border border-teal-200" : "text-slate-400 hover:text-slate-600"}`}>
-            {k === "unitPrice" ? "Unit Price" : "Total"}
+            {label}
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
@@ -230,16 +247,21 @@ function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
             <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-5 py-3">Vendor</th>
             <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Unit Price</th>
             <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Total</th>
+            {hasShipping && <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">Shipping</th>}
+            {hasShipping && <th className="text-left text-[11px] font-semibold text-teal-600 uppercase tracking-wider px-4 py-3">Landed Cost</th>}
+            {hasBenchmark && <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3">vs Market</th>}
             <th className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3 pr-5">Lead Time</th>
           </tr>
         </thead>
         <tbody>
           {sorted.map((q) => {
             const vendor = getVendor(q);
-            const isBest = q.status === "completed" && q.unitPrice === bestUnitPrice;
+            const isBest = isBestRow(q);
             const isAwarded = rfq.awardedVendorId && getVendorId(q) === rfq.awardedVendorId;
             const clickable = isClickable(q);
             const isPending = q.status === "pending" || q.status === "running";
+            const benchDiff = q.marketBenchmark?.percentDiff;
+            const isShippingRunning = q.shippingStatus === "estimating";
             return (
               <tr key={q._id} onClick={() => clickable && onSelectQuote(q)}
                 className={[
@@ -256,13 +278,53 @@ function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
                   <div className="mt-0.5"><StatusBadge status={q.status} /></div>
                 </td>
                 <td className="px-4 py-3.5">
-                  <span className={`font-mono font-semibold text-sm ${isBest ? "text-teal-700" : q.unitPrice ? "text-slate-800" : "text-slate-300"}`}>
+                  <span className={`font-mono font-semibold text-sm ${isBest && !hasShipping ? "text-teal-700" : q.unitPrice ? "text-slate-800" : "text-slate-300"}`}>
                     {formatCurrency(q.unitPrice, q.currency)}
                   </span>
                 </td>
                 <td className="px-4 py-3.5">
                   <span className="font-mono text-slate-600">{formatCurrency(q.price, q.currency)}</span>
                 </td>
+                {hasShipping && (
+                  <td className="px-4 py-3.5">
+                    {isShippingRunning ? (
+                      <span className="text-[11px] text-slate-400 animate-pulse">Checking…</span>
+                    ) : q.shipping?.cheapestRate != null ? (
+                      <div>
+                        <span className="font-mono text-xs text-slate-700">${q.shipping.cheapestRate.toFixed(2)}</span>
+                        <span className="text-[10px] text-slate-400 ml-1">{q.shipping.cheapestCarrier}</span>
+                      </div>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
+                )}
+                {hasShipping && (
+                  <td className="px-4 py-3.5">
+                    {q.totalLandedCost != null ? (
+                      <span className={`font-mono font-semibold text-sm ${isBest ? "text-teal-700" : "text-slate-800"}`}>
+                        ${q.totalLandedCost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : isShippingRunning ? (
+                      <span className="text-[11px] text-slate-400 animate-pulse">Calculating…</span>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
+                )}
+                {hasBenchmark && (
+                  <td className="px-4 py-3.5">
+                    {benchDiff != null ? (
+                      <span className={`text-xs font-semibold font-mono ${benchDiff < -5 ? "text-green-600" : benchDiff > 5 ? "text-red-600" : "text-slate-500"}`}>
+                        {benchDiff < -5 ? `↓${Math.abs(benchDiff)}%` : benchDiff > 5 ? `↑${benchDiff}%` : "≈ mkt"}
+                      </span>
+                    ) : q.benchmarkStatus === "checking" ? (
+                      <span className="text-[11px] text-slate-400 animate-pulse">…</span>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
+                )}
                 <td className="px-4 py-3.5 pr-5">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-slate-500 text-xs">{q.leadTime ?? (isPending ? "Pending…" : "—")}</span>
@@ -367,30 +429,54 @@ function VendorStrip({ quotes, vendorStatuses, streamingUrls }: {
 
 // ─── Activity Tab (Terminal) ──────────────────────────────────────────────────
 
+const AGENT_TYPE_ICONS: Record<string, string> = {
+  quote:     "",
+  shipping:  "📦",
+  trust:     "🛡",
+  benchmark: "📊",
+  discovery: "🔍",
+  pipeline:  "⚡",
+};
+
+const AGENT_TYPE_COLORS: Record<string, string> = {
+  shipping:  "text-blue-400",
+  trust:     "text-amber-400",
+  benchmark: "text-emerald-400",
+  discovery: "text-purple-400",
+  pipeline:  "text-teal-300",
+};
+
 const TerminalRow = memo(function TerminalRow({ event }: { event: AgentStreamEvent }) {
   if (!event.vendorName || event.vendorName === "System") return null;
   const ts = new Date(event.timestamp).toISOString().slice(11, 19);
-  const typeColor: Record<string, string> = {
+  const d = event.data as Record<string, unknown>;
+  const agentType = (d?.agentType as string) ?? "quote";
+
+  const baseTypeColor: Record<string, string> = {
     STARTED: "text-teal-400", STREAMING_URL: "text-blue-400",
     PROGRESS: "text-slate-400", COMPLETE: "text-green-400", ERROR: "text-red-400",
   };
+  const agentColor = AGENT_TYPE_COLORS[agentType];
+  const rowColor = agentColor ?? (baseTypeColor[event.type] ?? "text-slate-400");
+  const icon = AGENT_TYPE_ICONS[agentType] ?? "";
+
   const getMessage = () => {
-    const d = event.data as Record<string, unknown>;
     switch (event.type) {
-      case "STARTED":       return `Agent started · run ${(d.runId as string)?.slice(0, 8) ?? "…"}`;
+      case "STARTED":       return d.message ? String(d.message) : `Agent started · run ${(d.runId as string)?.slice(0, 8) ?? "…"}`;
       case "STREAMING_URL": return "Browser stream ready";
       case "PROGRESS":      return (d.purpose as string) ?? "Working…";
-      case "COMPLETE":      return d.status === "COMPLETED" ? "Quote extracted ✓" : `Failed: ${String(d.error ?? "unknown")}`;
+      case "COMPLETE":      return d.message ? String(d.message) : (d.status === "COMPLETED" ? "Complete ✓" : `Failed: ${String(d.error ?? "unknown")}`);
       case "ERROR":         return `Error: ${d.error as string}`;
       default:              return event.type;
     }
   };
+
   return (
     <div className="flex items-baseline gap-3 py-[3px] min-w-0 animate-slide-in">
       <span className="text-slate-600 shrink-0 text-[10px] select-none tabular-nums">{ts}</span>
-      <span className={`shrink-0 text-[10px] w-16 select-none ${typeColor[event.type] ?? "text-slate-600"}`}>[{event.type.slice(0, 7)}]</span>
-      <span className="text-slate-400 shrink-0 text-[10px] w-24 truncate">{event.vendorName}</span>
-      <span className={`${typeColor[event.type] ?? "text-slate-500"} text-[11px] flex-1 min-w-0 truncate`}>{getMessage()}</span>
+      <span className={`shrink-0 text-[10px] w-16 select-none ${rowColor}`}>[{event.type.slice(0, 7)}]</span>
+      <span className="text-slate-400 shrink-0 text-[10px] w-24 truncate">{icon} {event.vendorName}</span>
+      <span className={`${rowColor} text-[11px] flex-1 min-w-0 truncate`}>{getMessage()}</span>
     </div>
   );
 });
@@ -553,6 +639,107 @@ function DetailsTab({ rfq, onSaveTemplate }: { rfq: RFQ; onSaveTemplate: (name: 
   );
 }
 
+// ─── Pipeline Indicator ───────────────────────────────────────────────────────
+
+const PIPELINE_STAGES = [
+  { key: "quotes",      label: "Quotes" },
+  { key: "shipping",    label: "Shipping" },
+  { key: "benchmarking",label: "Market" },
+  { key: "complete",    label: "Complete" },
+] as const;
+
+function PipelineIndicator({ stage, rfqStatus }: { stage?: string; rfqStatus: string }) {
+  const stageOrder = ["quotes", "shipping", "benchmarking", "complete"];
+  const currentIdx = stage ? stageOrder.indexOf(stage) : rfqStatus === "running" ? 0 : -1;
+
+  return (
+    <div className="flex items-center gap-0 select-none">
+      {PIPELINE_STAGES.map((s, i) => {
+        const done   = currentIdx > i;
+        const active = currentIdx === i;
+        return (
+          <div key={s.key} className="flex items-center">
+            <div className="flex flex-col items-center">
+              <div className={`w-2.5 h-2.5 rounded-full border-2 transition-all duration-500 ${
+                done    ? "bg-green-500 border-green-500" :
+                active  ? "bg-teal-600 border-teal-600 animate-pulse" :
+                          "bg-white border-slate-300"
+              }`} />
+              <span className={`text-[9px] mt-1 font-medium leading-none whitespace-nowrap ${
+                done ? "text-green-600" : active ? "text-teal-700" : "text-slate-400"
+              }`}>{s.label}</span>
+            </div>
+            {i < PIPELINE_STAGES.length - 1 && (
+              <div className={`h-px w-8 mx-0.5 mb-3 transition-colors duration-500 ${done ? "bg-green-400" : "bg-slate-200"}`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Intelligence Card ────────────────────────────────────────────────────────
+
+function IntelligenceCard({ quotes, rfq }: { quotes: Quote[]; rfq: RFQ }) {
+  const completed = quotes.filter((q) => q.status === "completed" && q.unitPrice != null);
+  if (completed.length === 0 || rfq.pipelineStage !== "complete") return null;
+
+  const hasShipping = completed.some((q) => q.totalLandedCost != null);
+  const best = hasShipping
+    ? completed.reduce((a, b) => ((a.totalLandedCost ?? Infinity) < (b.totalLandedCost ?? Infinity) ? a : b))
+    : completed.reduce((a, b) => ((a.unitPrice ?? Infinity) < (b.unitPrice ?? Infinity) ? a : b));
+  const runnerUp = completed.filter((q) => q._id !== best._id)
+    .sort((a, b) => {
+      const av = hasShipping ? (a.totalLandedCost ?? Infinity) : (a.unitPrice ?? Infinity);
+      const bv = hasShipping ? (b.totalLandedCost ?? Infinity) : (b.unitPrice ?? Infinity);
+      return av - bv;
+    })[0];
+
+  const bestVendor = getVendor(best);
+  const runnerUpVendor = runnerUp ? getVendor(runnerUp) : null;
+
+  const bench = best.marketBenchmark;
+  const benchText = bench?.percentDiff != null
+    ? bench.percentDiff < -5 ? `${Math.abs(bench.percentDiff)}% below market average ($${bench.avgMarketPrice?.toFixed(2)}/unit)`
+    : bench.percentDiff > 5  ? `${bench.percentDiff}% above market average`
+    : "at market average"
+    : null;
+
+  return (
+    <div className="mx-5 mt-4 mb-2 border border-teal-200 rounded-[8px] bg-teal-50/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1">
+          <p className="text-xs font-bold text-teal-800 mb-1">Recommendation</p>
+          <p className="text-sm font-semibold text-slate-900">
+            {bestVendor?.name ?? "Best vendor"} — best total value
+            {hasShipping && best.totalLandedCost != null && (
+              <span className="text-teal-700 ml-1">
+                (${best.totalLandedCost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} landed)
+              </span>
+            )}
+          </p>
+          <div className="mt-1.5 space-y-0.5 text-xs text-slate-600">
+            {benchText && <p>• {benchText}</p>}
+            {best.shipping?.cheapestCarrier && best.shipping.estimatedDays && (
+              <p>• Fastest shipping: {best.shipping.estimatedDays} days via {best.shipping.cheapestCarrier}</p>
+            )}
+            {runnerUp && runnerUpVendor && (
+              <p className="text-slate-400 mt-1">
+                Runner-up: {runnerUpVendor.name} at{" "}
+                {hasShipping && runnerUp.totalLandedCost != null
+                  ? `$${runnerUp.totalLandedCost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} landed`
+                  : formatCurrency(runnerUp.unitPrice, runnerUp.currency) + "/unit"
+                }
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type TabKey = "quotes" | "activity" | "details";
@@ -710,20 +897,28 @@ export default function RFQDetailPage() {
         <Tab label="Activity" active={activeTab === "activity"} onClick={() => setActiveTab("activity")}
           badge={events.length} />
         <Tab label="Details" active={activeTab === "details"} onClick={() => setActiveTab("details")} />
-        {activeTab === "quotes" && quotes.length > 0 && (
-          <span className="ml-auto text-xs text-slate-400">
-            {quotes.filter((q) => q.status === "completed").length}/{quotes.length} complete
-            {quotes.some((q) => q.status === "completed") && (
-              <span className="ml-2 text-slate-300">· click row for details</span>
-            )}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-4">
+          {(rfq.status === "running" || rfq.pipelineStage) && (
+            <PipelineIndicator stage={rfq.pipelineStage} rfqStatus={rfq.status} />
+          )}
+          {activeTab === "quotes" && quotes.length > 0 && (
+            <span className="text-xs text-slate-400">
+              {quotes.filter((q) => q.status === "completed").length}/{quotes.length} complete
+              {quotes.some((q) => q.status === "completed") && (
+                <span className="ml-2 text-slate-300">· click row for details</span>
+              )}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto bg-white">
         {activeTab === "quotes" && (
-          <QuotesTab rfq={rfq} quotes={quotes} onSelectQuote={setSelectedQuote} onRerunFailed={handleRerunFailed} />
+          <>
+            <IntelligenceCard quotes={quotes} rfq={rfq} />
+            <QuotesTab rfq={rfq} quotes={quotes} onSelectQuote={setSelectedQuote} onRerunFailed={handleRerunFailed} />
+          </>
         )}
         {activeTab === "activity" && (
           <ActivityTab events={events} connected={connected} />

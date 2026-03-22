@@ -8,6 +8,27 @@ interface VendorPickerProps {
   onChange: (selected: Set<string>) => void;
 }
 
+function TrustBadge({ vendor }: { vendor: Vendor }) {
+  if (vendor.trustStatus === "checking") {
+    return (
+      <span className="text-[10px] font-mono text-slate-400 animate-pulse">
+        checking…
+      </span>
+    );
+  }
+  if (vendor.trustScore != null) {
+    const score = vendor.trustScore;
+    const color =
+      score >= 70 ? "text-green-600" : score >= 45 ? "text-amber-600" : "text-red-500";
+    return (
+      <span className={`text-[10px] font-mono shrink-0 ${color}`}>
+        ★ {score}
+      </span>
+    );
+  }
+  return null;
+}
+
 export default function VendorPicker({ vendors, selected, onChange }: VendorPickerProps) {
   const [search, setSearch] = useState("");
   const [tagFilter, setTagFilter] = useState("all");
@@ -62,7 +83,16 @@ export default function VendorPicker({ vendors, selected, onChange }: VendorPick
   // 1-5 vendors: simple list
   if (vendors.length <= 5 && allTags.length <= 1) {
     return (
-      <SimpleVendorList vendors={vendors} selected={selected} toggle={toggle} />
+      <div>
+        <SimpleVendorList vendors={vendors} selected={selected} toggle={toggle} />
+        {vendors.length < 4 && (
+          <div className="mt-2 text-right">
+            <Link to="/vendors" className="text-xs text-teal-600 hover:text-teal-700 font-medium">
+              + Discover more vendors →
+            </Link>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -143,6 +173,9 @@ export default function VendorPicker({ vendors, selected, onChange }: VendorPick
                   </div>
                 </div>
 
+                {/* Trust score */}
+                <TrustBadge vendor={v} />
+
                 {/* Reliability */}
                 <div className="flex items-center gap-1.5 shrink-0">
                   <div className="w-10 h-1 bg-slate-200 rounded-full overflow-hidden">
@@ -173,9 +206,14 @@ export default function VendorPicker({ vendors, selected, onChange }: VendorPick
 
       {/* Footer */}
       <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-        <span className="text-[11px] text-slate-500">
-          <span className="font-semibold text-teal-700">{selected.size}</span> of {vendors.length} selected
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-slate-500">
+            <span className="font-semibold text-teal-700">{selected.size}</span> of {vendors.length} selected
+          </span>
+          <Link to="/vendors" className="text-[11px] text-teal-600 hover:text-teal-700 font-medium">
+            + Discover
+          </Link>
+        </div>
         <div className="flex items-center gap-3">
           {filtered.length > 0 && filtered.some((v) => !selected.has(v._id)) && (
             <button onClick={selectAllVisible} className="text-[11px] text-teal-600 hover:text-teal-700 font-medium">
@@ -226,15 +264,16 @@ function SimpleVendorList({ vendors, selected, toggle }: {
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
-              <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+            <div className="flex items-center gap-3 shrink-0">
+              <TrustBadge vendor={v} />
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
                 v.browserProfile === "stealth"
                   ? "bg-amber-50 text-amber-700 border border-amber-200"
                   : "bg-slate-100 text-slate-500"
               }`}>
                 {v.browserProfile}
               </span>
-              <span>{v.reliability}%</span>
+              <span className="text-xs font-mono text-slate-400">{v.reliability}%</span>
             </div>
           </button>
         );

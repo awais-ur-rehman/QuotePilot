@@ -1,7 +1,9 @@
 import { Request, Response } from "express";
 import { z } from "zod";
 import * as vendorService from "../services/vendor.service";
+import { scoreVendor } from "../services/trust.service";
 import { asyncHandler } from "../middleware/error.middleware";
+import { logger } from "../utils/logger";
 
 // ─── Validation Schemas ───────────────────────────────────────────────────────
 
@@ -35,6 +37,11 @@ export const createVendor = asyncHandler(async (req: Request, res: Response) => 
   const validated = createVendorSchema.parse(req.body);
   const vendor = await vendorService.createVendor(validated);
   res.status(201).json({ status: "success", data: vendor });
+
+  // Fire-and-forget trust score check
+  scoreVendor(vendor._id.toString()).catch((err) => {
+    logger.warn(`Trust check failed for ${vendor.name}`, { error: err.message });
+  });
 });
 
 export const updateVendor = asyncHandler(async (req: Request, res: Response) => {
@@ -46,4 +53,14 @@ export const updateVendor = asyncHandler(async (req: Request, res: Response) => 
 export const deleteVendor = asyncHandler(async (req: Request, res: Response) => {
   await vendorService.deleteVendor(req.params.id);
   res.json({ status: "success", message: "Vendor deleted" });
+});
+
+export const checkTrust = asyncHandler(async (req: Request, res: Response) => {
+  const vendor = await vendorService.getVendorById(req.params.id);
+  res.json({ status: "success", message: "Trust check started", data: { vendorId: vendor._id } });
+
+  // Fire-and-forget
+  scoreVendor(req.params.id).catch((err) => {
+    logger.warn(`Trust check failed for vendor ${req.params.id}`, { error: err.message });
+  });
 });

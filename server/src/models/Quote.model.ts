@@ -24,12 +24,39 @@ const quoteSchema = new Schema<IQuoteDocument>(
     errorMessage: { type: String },
     stepsUsed: { type: Number },
     costUsd: { type: Number },
+    shipping: {
+      fedexRate: { type: Number },
+      upsRate: { type: Number },
+      cheapestCarrier: { type: String },
+      cheapestRate: { type: Number },
+      estimatedDays: { type: Number },
+      packageWeight: { type: String },
+      packageDimensions: { type: String },
+    },
+    shippingStatus: {
+      type: String,
+      enum: ["pending", "estimating", "completed", "failed", "skipped"],
+    },
+    totalLandedCost: { type: Number },
+    marketBenchmark: {
+      avgMarketPrice: { type: Number },
+      pricePosition: { type: String, enum: ["below_market", "at_market", "above_market"] },
+      percentDiff: { type: Number },
+      sourcesChecked: [{ type: String }],
+      lastChecked: { type: Date },
+    },
+    benchmarkStatus: {
+      type: String,
+      enum: ["pending", "checking", "completed", "failed", "skipped"],
+    },
   },
   { timestamps: true }
 );
 
 quoteSchema.index({ rfqId: 1, vendorId: 1 });
 quoteSchema.index({ rfqId: 1, status: 1 });
+quoteSchema.index({ rfqId: 1, shippingStatus: 1 });
+quoteSchema.index({ rfqId: 1, benchmarkStatus: 1 });
 quoteSchema.index({ vendorId: 1 });
 
 export const Quote = model<IQuoteDocument>("Quote", quoteSchema);

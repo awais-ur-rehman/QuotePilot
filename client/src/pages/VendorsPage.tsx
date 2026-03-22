@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
-import { vendorApi } from "../services/api";
+import { vendorApi, discoveryApi } from "../services/api";
 import Header from "../components/layout/Header";
 import EmptyState from "../components/common/EmptyState";
 import ConfirmDialog from "../components/common/ConfirmDialog";
-import type { Vendor } from "../types";
+import type { Vendor, DiscoveryRun, DiscoveredVendor } from "../types";
 
 // ─── Slide-in Panel ───────────────────────────────────────────────────────────
 
@@ -154,6 +154,163 @@ function VendorPanel({
   );
 }
 
+// ─── Trust Badge ─────────────────────────────────────────────────────────────
+
+function TrustBadge({ vendor }: { vendor: Vendor }) {
+  if (vendor.trustStatus === "checking") {
+    return <span className="text-[9px] px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-200 rounded font-mono animate-pulse">Checking…</span>;
+  }
+  if (vendor.trustScore == null) return null;
+  const color = vendor.trustScore >= 80 ? "bg-green-50 text-green-700 border-green-200"
+    : vendor.trustScore >= 60 ? "bg-amber-50 text-amber-700 border-amber-200"
+    : "bg-red-50 text-red-700 border-red-200";
+  return (
+    <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-semibold ${color}`}>
+      ★ {vendor.trustScore}/100
+    </span>
+  );
+}
+
+// ─── Discover Panel ───────────────────────────────────────────────────────────
+
+function DiscoverPanel({ onVendorAdded }: { onVendorAdded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [keyword, setKeyword] = useState("");
+  const [sources, setSources] = useState<Set<string>>(new Set(["google"]));
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<DiscoveryRun[]>([]);
+  const [addedIndices, setAddedIndices] = useState<Set<string>>(new Set());
+
+  const toggleSource = (s: string) => setSources((prev) => {
+    const next = new Set(prev);
+    if (next.has(s)) { if (next.size > 1) next.delete(s); } else next.add(s);
+    return next;
+  });
+
+  const handleSearch = async () => {
+    if (!keyword.trim()) return;
+    setSearching(true);
+    setResults([]);
+    setAddedIndices(new Set());
+    try {
+      const res = await discoveryApi.search(keyword.trim(), [...sources]);
+      setResults((res.data as DiscoveryRun[]) ?? []);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Discovery failed");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleAdd = async (runId: string, idx: number) => {
+    const key = `${runId}-${idx}`;
+    try {
+      await discoveryApi.accept(runId, idx);
+      setAddedIndices((prev) => new Set([...prev, key]));
+      onVendorAdded();
+      toast.success("Vendor added — trust check started");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add vendor");
+    }
+  };
+
+  const allVendors: Array<{ run: DiscoveryRun; idx: number; vendor: DiscoveredVendor }> = results.flatMap((run) =>
+    run.vendorsFound.map((v, idx) => ({ run, idx, vendor: v }))
+  );
+
+  return (
+    <div className="border border-slate-200 rounded-[6px] bg-white mb-6" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3.5 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-800">🔍 Discover Vendors</span>
+          <span className="text-[10px] text-slate-400">AI-powered supplier discovery</span>
+        </div>
+        <span className="text-slate-400 text-sm">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-slate-200 px-5 py-4">
+          <div className="flex gap-3 mb-3">
+            <input
+              className="input flex-1"
+              placeholder="Product keyword (e.g. custom corrugated boxes)"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
+            />
+            <div className="flex items-center gap-2 shrink-0">
+              {(["google", "thomasnet", "alibaba"] as const).map((s) => (
+                <label key={s} className="flex items-center gap-1 cursor-pointer select-none">
+                  <input type="checkbox" checked={sources.has(s)} onChange={() => toggleSource(s)} className="accent-teal-600" />
+                  <span className="text-xs text-slate-600 capitalize">{s}</span>
+                </label>
+              ))}
+            </div>
+            <button
+              onClick={handleSearch}
+              disabled={searching || !keyword.trim()}
+              className="btn-primary text-xs px-4 disabled:opacity-50"
+            >
+              {searching ? "Searching…" : "Search →"}
+            </button>
+          </div>
+
+          {searching && (
+            <p className="text-xs text-slate-400 font-mono animate-pulse">Agents searching the web for suppliers…</p>
+          )}
+
+          {allVendors.length > 0 && (
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              {allVendors.map(({ run, idx, vendor: v }) => {
+                const key = `${run._id}-${idx}`;
+                const added = addedIndices.has(key) || v.addedToRegistry;
+                return (
+                  <div key={key} className="border border-slate-200 rounded-[6px] p-3 bg-slate-50 flex flex-col gap-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{v.name}</p>
+                        <a href={v.website} target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] text-teal-600 hover:text-teal-700 font-mono truncate block">
+                          {v.website}
+                        </a>
+                      </div>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono shrink-0 ${
+                        run.source === "google" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                        run.source === "thomasnet" ? "bg-orange-50 text-orange-700 border-orange-200" :
+                        "bg-amber-50 text-amber-700 border-amber-200"
+                      }`}>{run.source}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
+                        {v.category && <span className="bg-slate-200 px-1.5 py-0.5 rounded font-mono">{v.category}</span>}
+                        {v.hasOnlineForm && <span className="text-green-600">✓ Online form</span>}
+                      </div>
+                      <button
+                        onClick={() => handleAdd(run._id, idx)}
+                        disabled={added}
+                        className={`text-[10px] px-2.5 py-1 rounded-[4px] font-medium transition-colors ${
+                          added
+                            ? "bg-green-50 text-green-700 border border-green-200 cursor-default"
+                            : "bg-teal-600 text-white hover:bg-teal-700"
+                        }`}
+                      >
+                        {added ? "✓ Added" : "+ Add"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Vendor Row ───────────────────────────────────────────────────────────────
 
 function VendorRow({
@@ -183,6 +340,7 @@ function VendorRow({
           }`}>
             {vendor.browserProfile}
           </span>
+          <TrustBadge vendor={vendor} />
         </div>
         <a
           href={vendor.website}
@@ -193,6 +351,12 @@ function VendorRow({
         >
           {vendor.website}
         </a>
+        {vendor.trustData?.bbbRating && (
+          <span className="text-[9px] text-slate-400 font-mono">
+            BBB: {vendor.trustData.bbbRating}{vendor.trustData.bbbAccredited ? " ✓" : ""}
+            {vendor.trustData.trustpilotScore != null && ` · Trustpilot: ${vendor.trustData.trustpilotScore}★`}
+          </span>
+        )}
       </div>
 
       {/* Tags */}
@@ -200,6 +364,9 @@ function VendorRow({
         {(vendor.tags ?? []).slice(0, 2).map((t) => (
           <span key={t} className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded font-mono">{t}</span>
         ))}
+        {vendor.discoveredFrom && (
+          <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-mono">{vendor.discoveredFrom}</span>
+        )}
       </div>
 
       {/* Reliability */}
@@ -281,6 +448,8 @@ export default function VendorsPage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-6">
+          <DiscoverPanel onVendorAdded={load} />
+
           {loading && (
             <p className="text-sm text-slate-400 font-mono animate-pulse">Loading vendors…</p>
           )}

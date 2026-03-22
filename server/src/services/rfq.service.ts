@@ -8,6 +8,8 @@ import { buildGoal } from "./goal-builder.service";
 import { updateVendorStats } from "./vendor.service";
 import { broadcastToRFQ, notifyRFQUpdated } from "../config/socket";
 import { sendCompletionEmail } from "./email.service";
+import { estimateShipping } from "./shipping.service";
+import { benchmarkRFQ } from "./benchmark.service";
 import { NotFoundError, BadRequestError } from "../utils/errors";
 import { logger } from "../utils/logger";
 import type { IRFQ, IVendor, ExtractedQuote, AgentStreamEvent } from "../types";
@@ -30,6 +32,12 @@ export interface CreateRFQDTO {
     phone?: string;
   };
   vendorIds: string[];
+  shippingDetails?: {
+    destinationZip?: string;
+    destinationCountry?: string;
+    estimatedWeight?: string;
+    packageType?: string;
+  };
 }
 
 export async function listRFQs(
@@ -260,7 +268,7 @@ export async function executeRun(rfqId: string, vendorIds?: string[]): Promise<v
       : "failed"
     : "completed";
 
-  await RFQ.findByIdAndUpdate(rfqId, { status: finalStatus });
+  await RFQ.findByIdAndUpdate(rfqId, { status: finalStatus, pipelineStage: "shipping" });
   notifyRFQUpdated(rfqId);
 
   const completedCount = finalQuotes.filter((q) => q.status === "completed").length;
@@ -283,6 +291,69 @@ export async function executeRun(rfqId: string, vendorIds?: string[]): Promise<v
   }
 
   logger.info(`RFQ ${rfqId} run completed. Status: ${finalStatus}`);
+
+  // ── Post-quote pipeline: shipping → benchmark ─────────────────────────────
+  if (finalStatus === "completed" && fullRfq?.shippingDetails?.destinationZip) {
+    const completedQuotes = finalQuotes.filter((q) => q.status === "completed" && q.unitPrice);
+
+    if (completedQuotes.length > 0) {
+      broadcastToRFQ(rfqId, {
+        rfqId, vendorId: "", vendorName: "Pipeline",
+        type: "STARTED",
+        data: { agentType: "shipping", message: `Estimating shipping for ${completedQuotes.length} quote(s)…` },
+        timestamp: new Date().toISOString(),
+      });
+
+      await Promise.allSettled(
+        completedQuotes.map((q) =>
+          estimateShipping(q._id.toString(), fullRfq, (event) => {
+            broadcastToRFQ(rfqId, {
+              rfqId,
+              vendorId: q.vendorId?.toString() ?? "",
+              vendorName: "Shipping Agent",
+              type: event.type as AgentStreamEvent["type"],
+              data: { ...event.data as object, agentType: "shipping", quoteId: q._id },
+              timestamp: new Date().toISOString(),
+            });
+          })
+        )
+      );
+    }
+  }
+
+  // Advance to benchmarking stage
+  await RFQ.findByIdAndUpdate(rfqId, { pipelineStage: "benchmarking" });
+  notifyRFQUpdated(rfqId);
+
+  if (finalStatus === "completed") {
+    broadcastToRFQ(rfqId, {
+      rfqId, vendorId: "", vendorName: "Pipeline",
+      type: "STARTED",
+      data: { agentType: "benchmark", message: "Checking market prices on Alibaba…" },
+      timestamp: new Date().toISOString(),
+    });
+
+    await benchmarkRFQ(rfqId, (event) => {
+      broadcastToRFQ(rfqId, {
+        rfqId,
+        vendorId: "market",
+        vendorName: "Market Benchmark",
+        type: event.type as AgentStreamEvent["type"],
+        data: { ...event.data as object, agentType: "benchmark" },
+        timestamp: new Date().toISOString(),
+      });
+    }).catch((err) => logger.warn("Benchmark failed", { rfqId, error: err.message }));
+  }
+
+  await RFQ.findByIdAndUpdate(rfqId, { pipelineStage: "complete" });
+  notifyRFQUpdated(rfqId);
+
+  broadcastToRFQ(rfqId, {
+    rfqId, vendorId: "", vendorName: "Pipeline",
+    type: "COMPLETE",
+    data: { agentType: "pipeline", message: "All agents complete. Pipeline finished." },
+    timestamp: new Date().toISOString(),
+  });
 }
 
 async function runVendorAgent(

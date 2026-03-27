@@ -1,4 +1,4 @@
-import type { RFQ, Vendor, Quote, AgentRun, ApiResponse } from "../types";
+import type { RFQ, Vendor, Quote, AgentRun, ApiResponse, DiscoveryRun, ShippingDetails } from "../types";
 
 const BASE = "/api";
 
@@ -25,7 +25,7 @@ export const rfqApi = {
 
   get: (id: string) => req<RFQ>(`/rfq/${id}`),
 
-  create: (body: Omit<RFQ, "_id" | "status" | "createdAt" | "updatedAt" | "quotes">) =>
+  create: (body: Omit<RFQ, "_id" | "status" | "createdAt" | "updatedAt" | "quotes"> & { shippingDetails?: ShippingDetails }) =>
     req<RFQ>("/rfq", { method: "POST", body: JSON.stringify(body) }),
 
   run: (id: string, vendorIds?: string[]) =>
@@ -58,6 +58,9 @@ export const vendorApi = {
     req<Vendor>(`/vendors/${id}`, { method: "PUT", body: JSON.stringify(body) }),
 
   delete: (id: string) => req<null>(`/vendors/${id}`, { method: "DELETE" }),
+
+  checkTrust: (id: string) =>
+    req<{ vendorId: string }>(`/vendors/${id}/check-trust`, { method: "POST" }),
 };
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
@@ -66,6 +69,26 @@ export const agentApi = {
   getRuns: (rfqId: string) => req<AgentRun[]>(`/agent/runs/${rfqId}`),
   cancel: (runId: string) =>
     req<null>(`/agent/cancel/${runId}`, { method: "POST" }),
+};
+
+// ─── Discovery ────────────────────────────────────────────────────────────────
+
+export const discoveryApi = {
+  search: (keyword: string, sources: string[] = ["google"]) =>
+    req<DiscoveryRun[]>("/discovery/search", {
+      method: "POST",
+      body: JSON.stringify({ keyword, sources }),
+    }),
+
+  listRuns: () => req<DiscoveryRun[]>("/discovery/runs"),
+
+  getRun: (id: string) => req<DiscoveryRun>(`/discovery/runs/${id}`),
+
+  accept: (discoveryRunId: string, vendorIndex: number) =>
+    req<Vendor>("/discovery/accept", {
+      method: "POST",
+      body: JSON.stringify({ discoveryRunId, vendorIndex }),
+    }),
 };
 
 // ─── Analytics ────────────────────────────────────────────────────────────────

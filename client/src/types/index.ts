@@ -3,6 +3,11 @@
 export type RFQStatus = "draft" | "running" | "completed" | "failed" | "cancelled" | "awarded";
 export type QuoteStatus = "pending" | "running" | "completed" | "failed" | "no_quote";
 export type AgentRunStatus = "queued" | "started" | "running" | "completed" | "failed" | "cancelled";
+export type TrustStatus = "pending" | "checking" | "scored" | "failed";
+export type ShippingStatus = "pending" | "estimating" | "completed" | "failed" | "skipped";
+export type BenchmarkStatus = "pending" | "checking" | "completed" | "failed" | "skipped";
+export type PipelineStage = "quotes" | "shipping" | "benchmarking" | "complete";
+export type DiscoverySource = "google" | "thomasnet" | "alibaba";
 
 export interface Vendor {
   _id: string;
@@ -15,6 +20,23 @@ export interface Vendor {
   isActive: boolean;
   reliability: number;
   avgSteps: number;
+  // Discovery
+  discoveredFrom?: string;
+  discoveredAt?: string;
+  // Trust
+  trustScore?: number;
+  trustData?: {
+    bbbRating?: string;
+    bbbAccredited?: boolean;
+    bbbComplaints?: number;
+    trustpilotScore?: number;
+    trustpilotReviews?: number;
+    googleRating?: number;
+    googleReviews?: number;
+    yearsInBusiness?: number;
+    lastChecked?: string;
+  };
+  trustStatus?: TrustStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +57,13 @@ export interface ContactInfo {
   phone?: string;
 }
 
+export interface ShippingDetails {
+  destinationZip?: string;
+  destinationCountry?: string;
+  estimatedWeight?: string;
+  packageType?: "box" | "pallet" | "envelope";
+}
+
 export interface RFQ {
   _id: string;
   title: string;
@@ -45,6 +74,8 @@ export interface RFQ {
   vendorIds: string[];
   awardedVendorId?: string;
   awardNotes?: string;
+  shippingDetails?: ShippingDetails;
+  pipelineStage?: PipelineStage;
   createdAt: string;
   updatedAt: string;
   quotes?: Quote[];
@@ -80,6 +111,8 @@ export interface PopulatedVendorRef {
   name: string;
   website: string;
   tags: string[];
+  trustScore?: number;
+  trustStatus?: TrustStatus;
 }
 
 // ─── RFQ Templates (localStorage) ────────────────────────────────────────────
@@ -102,7 +135,6 @@ export interface RFQTemplate {
 export interface Quote {
   _id: string;
   rfqId: string;
-  // populated by server: arrives as an object, not a raw string
   vendorId: string | PopulatedVendorRef;
   agentRunId: string;
   status: QuoteStatus;
@@ -117,6 +149,27 @@ export interface Quote {
   errorMessage?: string;
   stepsUsed?: number;
   costUsd?: number;
+  // Shipping estimation
+  shipping?: {
+    fedexRate?: number;
+    upsRate?: number;
+    cheapestCarrier?: string;
+    cheapestRate?: number;
+    estimatedDays?: number;
+    packageWeight?: string;
+    packageDimensions?: string;
+  };
+  shippingStatus?: ShippingStatus;
+  totalLandedCost?: number;
+  // Market benchmark
+  marketBenchmark?: {
+    avgMarketPrice?: number;
+    pricePosition?: "below_market" | "at_market" | "above_market";
+    percentDiff?: number;
+    sourcesChecked?: string[];
+    lastChecked?: string;
+  };
+  benchmarkStatus?: BenchmarkStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -156,4 +209,26 @@ export interface ApiResponse<T> {
     total: number;
     pages: number;
   };
+}
+
+// ─── Discovery ────────────────────────────────────────────────────────────────
+
+export interface DiscoveredVendor {
+  name: string;
+  website: string;
+  quoteUrl?: string;
+  hasOnlineForm: boolean;
+  category?: string;
+  addedToRegistry: boolean;
+}
+
+export interface DiscoveryRun {
+  _id: string;
+  searchQuery: string;
+  source: DiscoverySource;
+  status: "pending" | "running" | "completed" | "failed";
+  vendorsFound: DiscoveredVendor[];
+  stepsUsed?: number;
+  createdAt: string;
+  completedAt?: string;
 }

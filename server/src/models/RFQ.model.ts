@@ -29,6 +29,16 @@ const rfqSchema = new Schema<IRFQDocument>(
     vendorIds: [{ type: Types.ObjectId, ref: "Vendor" }],
     awardedVendorId: { type: Types.ObjectId, ref: "Vendor" },
     awardNotes: { type: String },
+    shippingDetails: {
+      destinationZip: { type: String },
+      destinationCountry: { type: String, default: "US" },
+      estimatedWeight: { type: String },
+      packageType: { type: String, enum: ["box", "pallet", "envelope"] },
+    },
+    pipelineStage: {
+      type: String,
+      enum: ["quotes", "shipping", "benchmarking", "complete"],
+    },
   },
   { timestamps: true }
 );

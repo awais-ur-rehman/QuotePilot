@@ -24,6 +24,12 @@ const createRFQSchema = z.object({
     phone: z.string().optional(),
   }),
   vendorIds: z.array(z.string().min(1)).min(1, "At least one vendor required"),
+  shippingDetails: z.object({
+    destinationZip: z.string().optional(),
+    destinationCountry: z.string().optional().default("US"),
+    estimatedWeight: z.string().optional(),
+    packageType: z.enum(["box", "pallet", "envelope"]).optional(),
+  }).optional(),
 });
 
 // ─── Controllers ──────────────────────────────────────────────────────────────

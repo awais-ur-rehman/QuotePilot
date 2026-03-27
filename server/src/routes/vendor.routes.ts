@@ -8,5 +8,6 @@ router.get("/:id", vendorController.getVendor);
 router.post("/", vendorController.createVendor);
 router.put("/:id", vendorController.updateVendor);
 router.delete("/:id", vendorController.deleteVendor);
+router.post("/:id/check-trust", vendorController.checkTrust);
 
 export default router;

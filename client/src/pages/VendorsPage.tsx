@@ -156,18 +156,204 @@ function VendorPanel({
 
 // ─── Trust Badge ─────────────────────────────────────────────────────────────
 
-function TrustBadge({ vendor }: { vendor: Vendor }) {
+function TrustBadge({ vendor, onRecheck }: { vendor: Vendor; onRecheck?: () => void }) {
   if (vendor.trustStatus === "checking") {
     return <span className="text-[9px] px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-200 rounded font-mono animate-pulse">Checking…</span>;
   }
-  if (vendor.trustScore == null) return null;
+  if (vendor.trustScore == null) {
+    if (!onRecheck) return null;
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onRecheck(); }}
+        className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-500 border border-slate-200 rounded font-mono hover:bg-teal-50 hover:text-teal-600 hover:border-teal-200 transition-colors"
+      >
+        Check trust
+      </button>
+    );
+  }
   const color = vendor.trustScore >= 80 ? "bg-green-50 text-green-700 border-green-200"
     : vendor.trustScore >= 60 ? "bg-amber-50 text-amber-700 border-amber-200"
     : "bg-red-50 text-red-700 border-red-200";
+  const hasSubs = vendor.trustData?.bbbRating || vendor.trustData?.trustpilotScore != null || vendor.trustData?.googleRating != null;
   return (
-    <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-semibold ${color}`}>
-      ★ {vendor.trustScore}/100
+    <span className="relative group">
+      <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-semibold cursor-default ${color}`}>
+        ★ {vendor.trustScore}/100
+      </span>
+      {/* Tooltip */}
+      {(hasSubs || onRecheck) && (
+        <div className="absolute bottom-full left-0 mb-1.5 hidden group-hover:block z-20 pointer-events-none group-hover:pointer-events-auto">
+          <div className="bg-slate-900 text-white text-[10px] rounded-[6px] p-2.5 shadow-xl font-mono whitespace-nowrap space-y-1 min-w-[140px]"
+               style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.18)" }}>
+            {vendor.trustData?.bbbRating && (
+              <div>BBB: {vendor.trustData.bbbRating}{vendor.trustData.bbbAccredited ? " ✓ accredited" : ""}</div>
+            )}
+            {vendor.trustData?.trustpilotScore != null && (
+              <div>Trustpilot: {vendor.trustData.trustpilotScore} ★</div>
+            )}
+            {vendor.trustData?.googleRating != null && (
+              <div>Google: {vendor.trustData.googleRating} ★</div>
+            )}
+            {onRecheck && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRecheck(); }}
+                className="text-teal-400 hover:text-teal-300 mt-1 block transition-colors"
+              >
+                ↺ Recheck trust
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </span>
+  );
+}
+
+// ─── Discovery Detail Panel ───────────────────────────────────────────────────
+
+function DiscoveryDetailPanel({
+  vendor,
+  runSource,
+  onClose,
+  onAdded,
+}: {
+  vendor: DiscoveredVendor;
+  runSource: string;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: vendor.name ?? "",
+    website: vendor.website ?? "",
+    quoteUrl: vendor.quoteUrl ?? "",
+    browserProfile: "lite" as "lite" | "stealth",
+  });
+  const [tags, setTags] = useState<string[]>(vendor.category ? [vendor.category.toLowerCase()] : []);
+  const [tagInput, setTagInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const set = (k: keyof typeof form) => (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const addTag = (raw: string) => {
+    const tag = raw.trim().toLowerCase();
+    if (tag && !tags.includes(tag)) setTags((t) => [...t, tag]);
+    setTagInput("");
+  };
+  const removeTag = (tag: string) => setTags((t) => t.filter((x) => x !== tag));
+
+  const handleAdd = async () => {
+    if (!form.name || !form.quoteUrl) {
+      setError("Name and Quote URL are required.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await vendorApi.create({
+        name: form.name,
+        website: form.website,
+        quoteUrl: form.quoteUrl,
+        browserProfile: form.browserProfile,
+        tags,
+        isActive: true,
+        discoveredFrom: runSource,
+      } as Parameters<typeof vendorApi.create>[0]);
+      toast.success("Vendor added to catalog");
+      onAdded();
+      onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to add vendor";
+      setError(msg);
+      toast.error(msg);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-slate-900/20" onClick={onClose} />
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-96 bg-white border-l border-slate-200 flex flex-col animate-slide-right"
+           style={{ boxShadow: "-4px 0 20px rgba(0,0,0,0.08)" }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Review Discovered Vendor</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Verify details before adding to catalog</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-[10px] px-2 py-1 rounded border font-mono ${
+              runSource === "google" ? "bg-blue-50 text-blue-700 border-blue-200" :
+              runSource === "thomasnet" ? "bg-orange-50 text-orange-700 border-orange-200" :
+              "bg-amber-50 text-amber-700 border-amber-200"
+            }`}>
+              via {runSource}
+            </span>
+            {vendor.hasOnlineForm && (
+              <span className="text-[10px] text-green-600 font-medium">✓ Online quote form detected</span>
+            )}
+          </div>
+
+          <div>
+            <label className="label">Name *</label>
+            <input className="input" value={form.name} onChange={set("name")} placeholder="Vendor name" />
+          </div>
+
+          <div>
+            <label className="label">Website</label>
+            <input className="input" value={form.website} onChange={set("website")} placeholder="https://example.com" />
+          </div>
+
+          <div>
+            <label className="label">Quote URL *</label>
+            <input className="input" value={form.quoteUrl} onChange={set("quoteUrl")} placeholder="https://example.com/get-quote" />
+            <p className="text-[11px] text-slate-400 mt-1">The agent starts here. Update if the auto-detected URL looks wrong.</p>
+          </div>
+
+          <div>
+            <label className="label">Tags</label>
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {tags.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 rounded font-mono">
+                  {t}
+                  <button type="button" onClick={() => removeTag(t)} className="text-teal-400 hover:text-teal-700 leading-none">×</button>
+                </span>
+              ))}
+            </div>
+            <input
+              className="input text-xs"
+              placeholder="Add tag and press Enter"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(tagInput); }}}
+              onBlur={() => tagInput.trim() && addTag(tagInput)}
+            />
+          </div>
+
+          <div>
+            <label className="label">Browser profile</label>
+            <select className="input" value={form.browserProfile} onChange={set("browserProfile") as React.ChangeEventHandler<HTMLSelectElement>}>
+              <option value="lite">lite — default, fast</option>
+              <option value="stealth">stealth — anti-bot bypass</option>
+            </select>
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="px-5 py-4 border-t border-slate-200 flex gap-3">
+          <button onClick={handleAdd} disabled={saving} className="btn-primary flex-1">
+            {saving ? "Adding…" : "Add to Catalog"}
+          </button>
+          <button onClick={onClose} className="btn-secondary px-4">Cancel</button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -180,6 +366,7 @@ function DiscoverPanel({ onVendorAdded }: { onVendorAdded: () => void }) {
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<DiscoveryRun[]>([]);
   const [addedIndices, setAddedIndices] = useState<Set<string>>(new Set());
+  const [pendingVendor, setPendingVendor] = useState<{ vendor: DiscoveredVendor; runSource: string; key: string } | null>(null);
 
   const toggleSource = (s: string) => setSources((prev) => {
     const next = new Set(prev);
@@ -202,16 +389,14 @@ function DiscoverPanel({ onVendorAdded }: { onVendorAdded: () => void }) {
     }
   };
 
-  const handleAdd = async (runId: string, idx: number) => {
-    const key = `${runId}-${idx}`;
-    try {
-      await discoveryApi.accept(runId, idx);
-      setAddedIndices((prev) => new Set([...prev, key]));
-      onVendorAdded();
-      toast.success("Vendor added — trust check started");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add vendor");
-    }
+  const handleOpenDetail = (run: DiscoveryRun, idx: number, vendor: DiscoveredVendor) => {
+    setPendingVendor({ vendor, runSource: run.source, key: `${run._id}-${idx}` });
+  };
+
+  const handleDetailAdded = (key: string) => {
+    setAddedIndices((prev) => new Set([...prev, key]));
+    onVendorAdded();
+    setPendingVendor(null);
   };
 
   const allVendors: Array<{ run: DiscoveryRun; idx: number; vendor: DiscoveredVendor }> = results.flatMap((run) =>
@@ -225,7 +410,7 @@ function DiscoverPanel({ onVendorAdded }: { onVendorAdded: () => void }) {
         className="w-full flex items-center justify-between px-5 py-3.5 text-left"
       >
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-800">🔍 Discover Vendors</span>
+          <span className="text-sm font-medium text-slate-800">Discover Vendors</span>
           <span className="text-[10px] text-slate-400">AI-powered supplier discovery</span>
         </div>
         <span className="text-slate-400 text-sm">{open ? "▲" : "▼"}</span>
@@ -272,10 +457,17 @@ function DiscoverPanel({ onVendorAdded }: { onVendorAdded: () => void }) {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-800 truncate">{v.name}</p>
-                        <a href={v.website} target="_blank" rel="noopener noreferrer"
-                          className="text-[10px] text-teal-600 hover:text-teal-700 font-mono truncate block">
-                          {v.website}
-                        </a>
+                        {v.website && (
+                          <a href={v.website} target="_blank" rel="noopener noreferrer"
+                            className="text-[10px] text-teal-600 hover:text-teal-700 font-mono truncate block">
+                            {v.website}
+                          </a>
+                        )}
+                        {v.quoteUrl && v.quoteUrl !== v.website && (
+                          <p className="text-[9px] text-slate-400 font-mono truncate" title={v.quoteUrl}>
+                            Quote: {v.quoteUrl}
+                          </p>
+                        )}
                       </div>
                       <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono shrink-0 ${
                         run.source === "google" ? "bg-blue-50 text-blue-700 border-blue-200" :
@@ -287,9 +479,10 @@ function DiscoverPanel({ onVendorAdded }: { onVendorAdded: () => void }) {
                       <div className="flex items-center gap-1.5 text-[9px] text-slate-500">
                         {v.category && <span className="bg-slate-200 px-1.5 py-0.5 rounded font-mono">{v.category}</span>}
                         {v.hasOnlineForm && <span className="text-green-600">✓ Online form</span>}
+                        {!v.quoteUrl && <span className="text-amber-600">No quote URL</span>}
                       </div>
                       <button
-                        onClick={() => handleAdd(run._id, idx)}
+                        onClick={() => !added && handleOpenDetail(run, idx, v)}
                         disabled={added}
                         className={`text-[10px] px-2.5 py-1 rounded-[4px] font-medium transition-colors ${
                           added
@@ -297,13 +490,22 @@ function DiscoverPanel({ onVendorAdded }: { onVendorAdded: () => void }) {
                             : "bg-teal-600 text-white hover:bg-teal-700"
                         }`}
                       >
-                        {added ? "✓ Added" : "+ Add"}
+                        {added ? "✓ Added" : "Review →"}
                       </button>
                     </div>
                   </div>
                 );
               })}
             </div>
+          )}
+
+          {pendingVendor && (
+            <DiscoveryDetailPanel
+              vendor={pendingVendor.vendor}
+              runSource={pendingVendor.runSource}
+              onClose={() => setPendingVendor(null)}
+              onAdded={() => handleDetailAdded(pendingVendor.key)}
+            />
           )}
         </div>
       )}
@@ -317,10 +519,12 @@ function VendorRow({
   vendor,
   onEdit,
   onDelete,
+  onRecheck,
 }: {
   vendor: Vendor;
   onEdit: () => void;
   onDelete: () => void;
+  onRecheck: () => void;
 }) {
   const reliabilityColor =
     vendor.reliability >= 80 ? "text-green-700 bg-green-50" :
@@ -340,7 +544,7 @@ function VendorRow({
           }`}>
             {vendor.browserProfile}
           </span>
-          <TrustBadge vendor={vendor} />
+          <TrustBadge vendor={vendor} onRecheck={onRecheck} />
         </div>
         <a
           href={vendor.website}
@@ -434,6 +638,16 @@ export default function VendorsPage() {
   const openEdit = (v: Vendor) => { setEditTarget(v); setShowPanel(true); };
   const closePanel = () => { setShowPanel(false); setEditTarget(null); };
 
+  const handleCheckTrust = async (vendorId: string) => {
+    try {
+      await vendorApi.checkTrust(vendorId);
+      load();
+      toast.success("Trust check started");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start trust check");
+    }
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Header
@@ -478,6 +692,7 @@ export default function VendorsPage() {
                   vendor={v}
                   onEdit={() => openEdit(v)}
                   onDelete={() => setConfirmDeleteId(v._id)}
+                  onRecheck={() => handleCheckTrust(v._id)}
                 />
               ))}
             </div>

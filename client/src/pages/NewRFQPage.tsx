@@ -43,7 +43,8 @@ interface CustomField { key: string; value: string }
 export default function NewRFQPage() {
   const navigate = useNavigate();
   const { profile } = useProfile();
-  const { templates } = useTemplates();
+  const { templates, removeTemplate } = useTemplates();
+  const [showTemplates, setShowTemplates] = useState(false);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [selectedVendors, setSelectedVendors] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -184,16 +185,54 @@ export default function NewRFQPage() {
                   Product Specifications
                 </h2>
                 {templates.length > 0 && (
-                  <select
-                    className="text-xs border border-slate-200 rounded-[6px] px-2 py-1 text-slate-600 bg-white hover:border-slate-300 transition-colors"
-                    defaultValue=""
-                    onChange={(e) => { if (e.target.value) loadTemplate(e.target.value); e.target.value = ""; }}
-                  >
-                    <option value="" disabled>Load template…</option>
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        className="text-xs border border-slate-200 rounded-[6px] px-2 py-1 text-slate-600 bg-white hover:border-slate-300 transition-colors"
+                        defaultValue=""
+                        onChange={(e) => { if (e.target.value) loadTemplate(e.target.value); e.target.value = ""; }}
+                      >
+                        <option value="" disabled>Load template…</option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setShowTemplates((v) => !v)}
+                        className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1"
+                        title="Manage templates"
+                      >
+                        {showTemplates ? "▲" : "▼"}
+                      </button>
+                    </div>
+                    {showTemplates && (
+                      <div className="absolute right-0 top-full mt-1 z-10 bg-white border border-slate-200 rounded-[6px] overflow-hidden min-w-[200px]"
+                           style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}>
+                        {templates.map((t) => (
+                          <div key={t.id} className="flex items-center justify-between px-3 py-2 border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                            <span className="text-xs text-slate-700 font-medium truncate flex-1 mr-2">{t.name}</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => { loadTemplate(t.id); setShowTemplates(false); }}
+                                className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+                              >
+                                Load
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { removeTemplate(t.id); }}
+                                className="text-xs text-red-400 hover:text-red-600"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 

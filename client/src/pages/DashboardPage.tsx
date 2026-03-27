@@ -3,6 +3,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { useRFQList } from "../hooks/useRFQ";
 import { rfqApi } from "../services/api";
+import { useProfile } from "../hooks/useProfile";
 import Header from "../components/layout/Header";
 import StatusBadge from "../components/common/StatusBadge";
 import EmptyState from "../components/common/EmptyState";
@@ -78,6 +79,7 @@ function RFQRow({ rfq, onDelete }: { rfq: RFQ; onDelete: () => void }) {
 
 export default function DashboardPage() {
   const { rfqs, total, loading, error, refetch, loadMore, hasMore } = useRFQList();
+  const { profile } = useProfile();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -115,6 +117,19 @@ export default function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto p-6 space-y-5">
+          {/* Profile setup banner */}
+          {(!profile?.email || !profile?.companyName) && (
+            <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-[6px]">
+              <div className="flex-1">
+                <span className="text-sm font-medium text-amber-800">Profile not set up</span>
+                <span className="text-xs text-amber-700 ml-2">— quotes won't include your contact info.</span>
+              </div>
+              <Link to="/settings" className="text-xs font-semibold text-teal-600 hover:text-teal-700 shrink-0 transition-colors">
+                Set up profile →
+              </Link>
+            </div>
+          )}
+
           {/* Stats bar */}
           <div className="flex items-center gap-3">
             {[

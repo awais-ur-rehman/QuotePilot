@@ -122,11 +122,21 @@ function QuoteDetailOverlay({ quote, onClose }: { quote: Quote; onClose: () => v
 
 // ─── CSV Export ───────────────────────────────────────────────────────────────
 
-function exportQuotesCSV(rfqTitle: string, quotes: Quote[]) {
+function exportQuotesCSV(rfqTitle: string, quotes: Quote[], rfq?: RFQ) {
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const headers = ["Vendor", "Status", "Unit Price", "Total", "Lead Time", "MOQ", "Shipping", "Currency", "Notes"];
+  const withShipping = rfq?.shippingDetails?.destinationZip != null || quotes.some((q) => q.shipping?.cheapestRate != null);
+  const withBenchmark = withShipping || quotes.some((q) => q.marketBenchmark?.avgMarketPrice != null);
+  const headers = [
+    "Vendor", "Status", "Unit Price", "Total", "Lead Time", "MOQ", "Currency", "Notes",
+    ...(withShipping ? ["Shipping Est.", "Landed Cost"] : []),
+    ...(withBenchmark ? ["vs Market"] : []),
+  ];
   const rows = quotes.map((q) => {
     const vendor = typeof q.vendorId === "object" && q.vendorId !== null ? q.vendorId.name : q.vendorId;
+    const benchDiff = q.marketBenchmark?.percentDiff;
+    const benchText = benchDiff != null
+      ? benchDiff < -5 ? `↓${Math.abs(benchDiff)}%` : benchDiff > 5 ? `↑${benchDiff}%` : "≈ mkt"
+      : "";
     return [
       esc(vendor),
       esc(q.status),
@@ -134,9 +144,13 @@ function exportQuotesCSV(rfqTitle: string, quotes: Quote[]) {
       esc(q.price ?? ""),
       esc(q.leadTime ?? ""),
       esc(q.minimumOrder ?? ""),
-      esc(q.shippingCost ?? ""),
       esc(q.currency ?? "USD"),
       esc(q.notes ?? q.errorMessage ?? ""),
+      ...(withShipping ? [
+        esc(q.shipping?.cheapestRate != null ? `$${q.shipping.cheapestRate.toFixed(2)} ${q.shipping.cheapestCarrier ?? ""}`.trim() : ""),
+        esc(q.totalLandedCost != null ? `$${q.totalLandedCost.toFixed(2)}` : ""),
+      ] : []),
+      ...(withBenchmark ? [esc(benchText)] : []),
     ].join(",");
   });
   const csv = [headers.join(","), ...rows].join("\n");
@@ -151,16 +165,14 @@ function exportQuotesCSV(rfqTitle: string, quotes: Quote[]) {
 
 // ─── Quotes Tab ───────────────────────────────────────────────────────────────
 
-function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
+function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed, streamingUrls }: {
   rfq: RFQ; quotes: Quote[]; onSelectQuote: (q: Quote) => void; onRerunFailed: (ids: string[]) => void;
+  streamingUrls?: Map<string, string>;
 }) {
   const [sortKey, setSortKey] = useState<"unitPrice" | "totalLandedCost" | "price">("totalLandedCost");
-  const [awardVendorId, setAwardVendorId] = useState<string | null>(null);
-  const [awardNotes, setAwardNotes] = useState("");
-  const [awarding, setAwarding] = useState(false);
 
-  const hasShipping = quotes.some((q) => q.shipping?.cheapestRate != null);
-  const hasBenchmark = quotes.some((q) => q.marketBenchmark?.avgMarketPrice != null);
+  const hasShipping = rfq.shippingDetails?.destinationZip != null || quotes.some((q) => q.shipping?.cheapestRate != null);
+  const hasBenchmark = hasShipping || quotes.some((q) => q.marketBenchmark?.avgMarketPrice != null);
 
   const effectiveSortKey = sortKey === "totalLandedCost" && !hasShipping ? "unitPrice" : sortKey;
   const sorted = [...quotes].sort((a, b) => {
@@ -176,26 +188,8 @@ function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
     hasShipping ? q.totalLandedCost === bestLandedCost : q.unitPrice === bestUnitPrice
   );
   const isClickable = (q: Quote) => q.status === "completed" || q.status === "failed" || q.status === "no_quote";
-  const completedQuotes = quotes.filter((q) => q.status === "completed");
   const failedQuotes = quotes.filter((q) => q.status === "failed" || q.status === "no_quote");
-  const showAwardSection = (rfq.status === "completed" || rfq.status === "awarded") && completedQuotes.length > 0;
   const showRerunFailed = failedQuotes.length > 0 && rfq.status !== "running";
-
-  const handleAward = async () => {
-    if (!awardVendorId) return;
-    // Find the quote for this vendor
-    const q = completedQuotes.find((cq) => getVendorId(cq) === awardVendorId);
-    if (!q) return;
-    setAwarding(true);
-    try {
-      await rfqApi.award(rfq._id, awardVendorId, awardNotes || undefined);
-      toast.success(`Quote awarded to ${getVendor(q)?.name ?? "vendor"} ★`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to award quote");
-    } finally {
-      setAwarding(false);
-    }
-  };
 
   if (quotes.length === 0) {
     return (
@@ -232,7 +226,7 @@ function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
           )}
           {quotes.length > 0 && (
             <button
-              onClick={() => exportQuotesCSV(rfq.title, quotes)}
+              onClick={() => exportQuotesCSV(rfq.title, quotes, rfq)}
               className="text-xs px-2.5 py-1 rounded-[6px] border border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 transition-colors"
             >
               ↓ CSV
@@ -256,12 +250,16 @@ function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
         <tbody>
           {sorted.map((q) => {
             const vendor = getVendor(q);
+            const vid = getVendorId(q);
             const isBest = isBestRow(q);
-            const isAwarded = rfq.awardedVendorId && getVendorId(q) === rfq.awardedVendorId;
+            const isAwarded = rfq.awardedVendorId && vid === rfq.awardedVendorId;
             const clickable = isClickable(q);
             const isPending = q.status === "pending" || q.status === "running";
+            const isFailed = q.status === "failed" || q.status === "no_quote";
             const benchDiff = q.marketBenchmark?.percentDiff;
             const isShippingRunning = q.shippingStatus === "estimating";
+            const streamUrl = streamingUrls?.get(vid);
+            const isLiveRunning = isPending && streamUrl;
             return (
               <tr key={q._id} onClick={() => clickable && onSelectQuote(q)}
                 className={[
@@ -328,7 +326,23 @@ function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
                 <td className="px-4 py-3.5 pr-5">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-slate-500 text-xs">{q.leadTime ?? (isPending ? "Pending…" : "—")}</span>
-                    {clickable && <span className="text-[11px] text-slate-300 group-hover:text-teal-600 transition-colors font-medium shrink-0">Details →</span>}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isLiveRunning && (
+                        <a href={streamUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] text-blue-500 hover:text-blue-700 font-medium" onClick={(e) => e.stopPropagation()}>
+                          Watch →
+                        </a>
+                      )}
+                      {isFailed && rfq.status !== "running" && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onRerunFailed([vid]); }}
+                          className="text-[10px] text-amber-600 hover:text-amber-700 font-medium border border-amber-200 px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 transition-colors"
+                        >
+                          ↺ Retry
+                        </button>
+                      )}
+                      {clickable && !isFailed && <span className="text-[11px] text-slate-300 group-hover:text-teal-600 transition-colors font-medium">Details →</span>}
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -337,52 +351,78 @@ function QuotesTab({ rfq, quotes, onSelectQuote, onRerunFailed }: {
         </tbody>
       </table>
 
-      {/* Award section */}
-      {showAwardSection && rfq.status !== "awarded" && (
-        <div className="mx-5 my-4 border border-slate-200 rounded-[6px] p-4 bg-slate-50">
-          <p className="text-xs font-semibold text-slate-600 mb-3">Ready to decide? Select the winning vendor:</p>
-          <div className="space-y-1.5 mb-3">
-            {completedQuotes.map((q) => {
-              const vendor = getVendor(q);
-              const vid = getVendorId(q);
-              const isBest = q.unitPrice === bestUnitPrice;
-              return (
-                <label key={q._id} className={`flex items-center gap-2.5 px-3 py-2 rounded-[6px] border cursor-pointer transition-colors ${awardVendorId === vid ? "bg-teal-50 border-teal-300" : "bg-white border-slate-200 hover:border-slate-300"}`}>
-                  <input type="radio" name="award" value={vid} checked={awardVendorId === vid} onChange={() => setAwardVendorId(vid)} className="accent-teal-600" />
-                  <span className="text-sm font-medium text-slate-800">{vendor?.name ?? vid}</span>
-                  {q.unitPrice != null && (
-                    <span className="text-xs font-mono text-slate-500">{formatCurrency(q.unitPrice, q.currency)}/unit</span>
-                  )}
-                  {isBest && <span className="text-[9px] bg-teal-600 text-white px-1.5 py-0.5 rounded font-bold tracking-widest ml-1">BEST</span>}
-                </label>
-              );
-            })}
-          </div>
-          <input
-            className="input text-xs mb-3"
-            placeholder="Optional note: reason for selecting this vendor…"
-            value={awardNotes}
-            onChange={(e) => setAwardNotes(e.target.value)}
-          />
-          <button
-            onClick={handleAward}
-            disabled={!awardVendorId || awarding}
-            className="btn-primary text-xs px-4 py-2 disabled:opacity-50"
-          >
-            {awarding ? "Awarding…" : "Award Quote →"}
-          </button>
-        </div>
-      )}
+    </div>
+  );
+}
 
-      {rfq.status === "awarded" && rfq.awardNotes && (
-        <div className="mx-5 my-4 flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-[6px] px-4 py-3">
-          <span className="text-blue-600 text-sm">★</span>
-          <div>
-            <p className="text-xs font-semibold text-blue-700">Award note</p>
-            <p className="text-xs text-blue-600 mt-0.5">{rfq.awardNotes}</p>
-          </div>
-        </div>
-      )}
+// ─── Award Bar (sticky, outside scroll) ──────────────────────────────────────
+
+function AwardBar({ rfq, quotes }: { rfq: RFQ; quotes: Quote[] }) {
+  const completedQuotes = quotes.filter((q) => q.status === "completed");
+  const [awardVendorId, setAwardVendorId] = useState<string | null>(rfq.awardedVendorId ?? null);
+  const [awardNotes, setAwardNotes] = useState("");
+  const [awarding, setAwarding] = useState(false);
+
+  const prices = completedQuotes.filter((q) => q.unitPrice != null).map((q) => q.unitPrice!);
+  const bestUnitPrice = prices.length > 0 ? Math.min(...prices) : Infinity;
+
+  if ((rfq.status !== "completed" && rfq.status !== "awarded") || completedQuotes.length === 0) return null;
+
+  if (rfq.status === "awarded") {
+    return (
+      <div className="px-5 py-2.5 border-b border-blue-200 bg-blue-50 flex items-center gap-3 shrink-0">
+        <span className="text-blue-600">★</span>
+        <span className="text-xs font-semibold text-blue-700">Quote awarded</span>
+        {rfq.awardNotes && <span className="text-xs text-blue-600">— {rfq.awardNotes}</span>}
+      </div>
+    );
+  }
+
+  const handleAward = async () => {
+    if (!awardVendorId) return;
+    setAwarding(true);
+    try {
+      await rfqApi.award(rfq._id, awardVendorId, awardNotes || undefined);
+      const q = completedQuotes.find((cq) => getVendorId(cq) === awardVendorId);
+      toast.success(`Quote awarded to ${getVendor(q ?? completedQuotes[0])?.name ?? "vendor"} ★`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to award quote");
+    } finally {
+      setAwarding(false);
+    }
+  };
+
+  return (
+    <div className="px-5 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center gap-3 flex-wrap shrink-0">
+      <span className="text-xs font-semibold text-slate-600 shrink-0">Award to:</span>
+      <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+        {completedQuotes.map((q) => {
+          const vendor = getVendor(q);
+          const vid = getVendorId(q);
+          const isBest = q.unitPrice === bestUnitPrice;
+          return (
+            <label key={q._id} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border cursor-pointer transition-colors text-xs ${awardVendorId === vid ? "bg-teal-50 border-teal-300 text-teal-800" : "bg-white border-slate-200 text-slate-700 hover:border-slate-300"}`}>
+              <input type="radio" name="award-bar" value={vid} checked={awardVendorId === vid} onChange={() => setAwardVendorId(vid)} className="accent-teal-600" />
+              <span className="font-medium">{vendor?.name ?? vid}</span>
+              {q.unitPrice != null && <span className="font-mono text-[10px] text-slate-400">{formatCurrency(q.unitPrice, q.currency)}</span>}
+              {isBest && <span className="text-[9px] bg-teal-600 text-white px-1 py-0.5 rounded font-bold">BEST</span>}
+            </label>
+          );
+        })}
+      </div>
+      <input
+        className="input text-xs w-44 shrink-0"
+        placeholder="Award note (optional)…"
+        value={awardNotes}
+        onChange={(e) => setAwardNotes(e.target.value)}
+      />
+      <button
+        onClick={handleAward}
+        disabled={!awardVendorId || awarding}
+        className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50 shrink-0"
+      >
+        {awarding ? "Awarding…" : "Award →"}
+      </button>
     </div>
   );
 }
@@ -431,11 +471,11 @@ function VendorStrip({ quotes, vendorStatuses, streamingUrls }: {
 
 const AGENT_TYPE_ICONS: Record<string, string> = {
   quote:     "",
-  shipping:  "📦",
-  trust:     "🛡",
-  benchmark: "📊",
-  discovery: "🔍",
-  pipeline:  "⚡",
+  shipping:  "ship",
+  trust:     "trust",
+  benchmark: "bench",
+  discovery: "disc",
+  pipeline:  "pipe",
 };
 
 const AGENT_TYPE_COLORS: Record<string, string> = {
@@ -912,12 +952,15 @@ export default function RFQDetailPage() {
         </div>
       </div>
 
+      {/* Award bar — outside scroll, visible on quotes tab only */}
+      {activeTab === "quotes" && <AwardBar rfq={rfq} quotes={quotes} />}
+
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto bg-white">
         {activeTab === "quotes" && (
           <>
             <IntelligenceCard quotes={quotes} rfq={rfq} />
-            <QuotesTab rfq={rfq} quotes={quotes} onSelectQuote={setSelectedQuote} onRerunFailed={handleRerunFailed} />
+            <QuotesTab rfq={rfq} quotes={quotes} onSelectQuote={setSelectedQuote} onRerunFailed={handleRerunFailed} streamingUrls={streamingUrls} />
           </>
         )}
         {activeTab === "activity" && (
